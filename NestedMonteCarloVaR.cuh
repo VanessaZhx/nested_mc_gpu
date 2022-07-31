@@ -8,6 +8,7 @@
 #include "BasketOption.h"
 #include "BarrierOption.h"
 
+#include <mkl.h>
 #include <math.h>
 #include <algorithm>
 #include <chrono>
