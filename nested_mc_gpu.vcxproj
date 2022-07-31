@@ -78,6 +78,19 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <CudaCompile Include="kernel.cu" />
+    <CudaCompile Include="NestedMonteCarloVaR.cu" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="BarrierOption.h" />
+    <ClInclude Include="BasketOption.h" />
+    <ClInclude Include="Bond.h" />
+    <ClInclude Include="cuda_helper.cuh" />
+    <ClInclude Include="NestedMonteCarloVaR.cuh" />
+    <ClInclude Include="RNG.cuh" />
+    <ClInclude Include="Stock.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="RNG.cu" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

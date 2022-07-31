@@ -1,121 +1,63 @@
-﻿
-#include "cuda_runtime.h"
-#include "device_launch_parameters.h"
-
-#include <stdio.h>
-
-cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size);
-
-__global__ void addKernel(int *c, const int *a, const int *b)
-{
-    int i = threadIdx.x;
-    c[i] = a[i] + b[i];
-}
+﻿#include "NestedMonteCarloVaR.cuh"
 
 int main()
 {
-    const int arraySize = 5;
-    const int a[arraySize] = { 1, 2, 3, 4, 5 };
-    const int b[arraySize] = { 10, 20, 30, 40, 50 };
-    int c[arraySize] = { 0 };
+	const int exp_times = 1;   // Total times of MC
 
-    // Add vectors in parallel.
-    cudaError_t cudaStatus = addWithCuda(c, a, b, arraySize);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "addWithCuda failed!");
-        return 1;
-    }
+	const int path_ext = 10;  // Number of the outer MC loops
+	const int path_int = 1024;  // Number of the inner MC loops
 
-    printf("{1,2,3,4,5} + {10,20,30,40,50} = {%d,%d,%d,%d,%d}\n",
-        c[0], c[1], c[2], c[3], c[4]);
+	const int var_t = 1;					// VaR duration
+	const float var_per = 0.95f;				// 1-percentile
 
-    // cudaDeviceReset must be called before exiting in order for profiling and
-    // tracing tools such as Nsight and Visual Profiler to show complete traces.
-    cudaStatus = cudaDeviceReset();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaDeviceReset failed!");
-        return 1;
-    }
+	const int port_n = 4;					// Number of products in the portfolio
+	float port_w[port_n] = { 0.3f, 0.3f, 0.1f, 0.3f };		// Weights of the products in the portfolio
+														// { bond, stock, basket option, barrier option}
+	const float risk_free = 0.02f;
 
-    return 0;
-}
+	const float bond_par = 1000.0f;			// Par value of bond
+	const float bond_c = 100.0f;			// Coupon
+	const int bond_m = 10;					// Maturity
+	float bond_y[bond_m] = {
+			5.00f, 5.69f, 6.09f, 6.38f, 6.61f,
+			6.79f, 6.94f, 7.07f, 7.19f, 7.30f
+	};										// yeild curve
+	const float sigma = 1.5f;				// sigma
 
-// Helper function for using CUDA to add vectors in parallel.
-cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size)
-{
-    int *dev_a = 0;
-    int *dev_b = 0;
-    int *dev_c = 0;
-    cudaError_t cudaStatus;
+	const float stock_s0 = 300.0f;			// Start value of stock
+	const float stock_mu = risk_free;			// risk free(or mean)
+	const float stock_var = 0.13f;			// Volatility
+	const int stock_x = 100;					// Number of shares
 
-    // Choose which GPU to run on, change this on a multi-GPU system.
-    cudaStatus = cudaSetDevice(0);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
-        goto Error;
-    }
+	Stock* s1 = new Stock(stock_s0, stock_mu, stock_var, 100);
+	Stock* s2 = new Stock(stock_s0, stock_mu, stock_var, 100);
+	const int bskop_n = 2;								// Number of stocks in basket
+	const float bskop_k = 3100.0f;						// Execution price
+	const int bskop_t = 1;								// Maturity of basket option
+	Stock bskop_stocks[bskop_n] = { *s1, *s2 };			// List of stocks
+	float bskop_cov[bskop_n * bskop_n] = { 1.0f, 0.5f,
+										   0.5f, 1.0f };	// Covariance matrix
+	float bskop_w[bskop_n] = { 0.5f, 0.5f };				// weight
 
-    // Allocate GPU buffers for three vectors (two input, one output)    .
-    cudaStatus = cudaMalloc((void**)&dev_c, size * sizeof(int));
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc failed!");
-        goto Error;
-    }
+	const float barop_k = 310.0f;				// Execution price
+	const float barop_h = 320.0f;				// Barrier
+	const int barop_t = 10;						// Maturity(steps of inner path)
 
-    cudaStatus = cudaMalloc((void**)&dev_a, size * sizeof(int));
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc failed!");
-        goto Error;
-    }
+	NestedMonteCarloVaR* mc = new NestedMonteCarloVaR(
+		path_ext, path_int,
+		var_t, var_per,
+		port_n, port_w,
+		risk_free
+	);
+	mc->bond_init(bond_par, bond_c, bond_m, bond_y, sigma, 0);
+	mc->stock_init(stock_s0, stock_mu, stock_var, stock_x, 1);
+	mc->bskop_init(bskop_n, bskop_stocks, bskop_cov, bskop_k, bskop_w, bskop_t, 2);
+	mc->barop_int(s1, barop_k, barop_h, barop_t, 3);
 
-    cudaStatus = cudaMalloc((void**)&dev_b, size * sizeof(int));
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMalloc failed!");
-        goto Error;
-    }
-
-    // Copy input vectors from host memory to GPU buffers.
-    cudaStatus = cudaMemcpy(dev_a, a, size * sizeof(int), cudaMemcpyHostToDevice);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!");
-        goto Error;
-    }
-
-    cudaStatus = cudaMemcpy(dev_b, b, size * sizeof(int), cudaMemcpyHostToDevice);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!");
-        goto Error;
-    }
-
-    // Launch a kernel on the GPU with one thread for each element.
-    addKernel<<<1, size>>>(dev_c, dev_a, dev_b);
-
-    // Check for any errors launching the kernel
-    cudaStatus = cudaGetLastError();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
-        goto Error;
-    }
-    
-    // cudaDeviceSynchronize waits for the kernel to finish, and returns
-    // any errors encountered during the launch.
-    cudaStatus = cudaDeviceSynchronize();
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
-        goto Error;
-    }
-
-    // Copy output vector from GPU buffer to host memory.
-    cudaStatus = cudaMemcpy(c, dev_c, size * sizeof(int), cudaMemcpyDeviceToHost);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!");
-        goto Error;
-    }
-
-Error:
-    cudaFree(dev_c);
-    cudaFree(dev_a);
-    cudaFree(dev_b);
-    
-    return cudaStatus;
+	double exe_time = 0.0;
+	for (int i = 0; i < exp_times; i++) {
+		exe_time = mc->execute();
+		cout << "EXECUTION TIME: " << exe_time << " ms." << endl;
+	}
+	return 0;
 }
