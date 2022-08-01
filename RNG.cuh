@@ -19,7 +19,8 @@ public:
     int RNG::init_gpu();
     void set_offset(int ofs) { offset = ofs; }
     int generate_sobol(float*& data, int m, int n);
-    int convert_normal(float*& data, int length, float sigma = 1);
+    int convert_normal(float*& data, int length, float sigma = 1.0f);
+    int generate_sobol_normal(float*& data, int m, int n, float sigma = 1.0f);
 private:
     curandGenerator_t gen;
     int offset = 1024;

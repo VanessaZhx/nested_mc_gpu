@@ -37,3 +37,19 @@ int RNG::convert_normal(float*& data, int length, float sigma) {
     
     return 0;
 }
+
+int RNG::generate_sobol_normal(float*& data, int m, int n, float sigma) {
+    // M-dim of N numbers
+    /* Set offset*/
+    CURAND_CALL(curandSetGeneratorOffset(gen, this->offset));
+
+    /* Set dimention m */
+    CURAND_CALL(curandSetQuasiRandomGeneratorDimensions(gen, m));
+
+    /* Generate n floats on device */
+    CURAND_CALL(curandGenerateNormal(gen, data, n * m, 0, sigma));
+
+    // offset will be added up with each rng call
+    this->offset += n * m;
+    return 0;
+}

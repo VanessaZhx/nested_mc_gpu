@@ -1,4 +1,6 @@
 #include "NestedMonteCarloVaR.cuh"
+#define DATA_BLOCK 32
+
 using namespace std;
 
 NestedMonteCarloVaR::NestedMonteCarloVaR(int pext, int pint,
@@ -161,30 +163,58 @@ void NestedMonteCarloVaR::barop_int(Stock* barop_stock, float barop_k,
 	this->port_p0 += s->x * (call / path_int) * port_w[idx];
 }
 
+__global__ void moro_inv(float* data, int cnt, float mean, float std) {
+	// Each thread will handle one transfer
+	size_t Idx = threadIdx.x + blockDim.x * blockIdx.x;
+	if (Idx >= cnt) return;
+
+	data[Idx] = normcdfinvf(data[Idx]) * std + mean;
+}
+
+__global__ void moro_inv_v2(float* data, int cnt, float mean, float std) {
+	// Each thread will handle DATA_BLOCK transfer
+	size_t Idx = threadIdx.x + blockDim.x * blockIdx.x;
+	if (Idx >= cnt) return;
+
+	float* data_p = &data[Idx * DATA_BLOCK];
+
+	for (int i = 0; i < DATA_BLOCK; i++) {
+		data_p[i] = normcdfinvf(data_p[i]) * std + mean;
+	}
+
+}
 
 
 double NestedMonteCarloVaR::execute() {
 	chrono::steady_clock::time_point start = chrono::steady_clock::now();
 
-//	// ====================================================
-//	//             Random number preperation
-//	// ====================================================
-//	/* == BOND ==
-//	** RN is used to move yield curve up/down, N~(0, sigma^2)
-//	** [path_ext, 1]
-//	*/
-//	bond_rn = (float*)malloc((size_t)path_ext * sizeof(float));
-//	rng->generate_sobol(bond_rn, 1, path_ext);
-//	rng->convert_normal(bond_rn, path_ext, bond->sigma);					
-//
-//	/* == STOCK ==
-//	** RN is used as the external path
-//	** For stock pricing only, there's no need to generate the inner path now
-//	** [path_ext, var_t]
-//	*/
-//	stock_rn = (float*)malloc((size_t)path_ext * sizeof(float));
-//	rng->generate_sobol(stock_rn, var_t, path_ext);
-//	rng->convert_normal(stock_rn, var_t * path_ext);
+	// ====================================================
+	//             Random number preperation
+	// ====================================================
+	int blocksize = 1024;
+	dim3 block(blocksize, 1);
+
+	/* == BOND ==
+	** RN is used to move yield curve up/down, N~(0, sigma^2)
+	** [path_ext, 1]
+	*/
+	CUDA_CALL(cudaMalloc((void**)&bond_rn, path_ext * sizeof(float)));
+	rng->generate_sobol(bond_rn, 1, path_ext);
+	dim3 grid_v1((path_ext - 1) / block.x + 1, 1);
+	moro_inv << < grid_v1, block >> > (bond_rn, path_ext, 0, bond->sigma);
+
+	//dim3 grid_v2((path_ext - 1) / (block.x * DATA_BLOCK) + 1, 1);
+	//moro_inv_v2 << < grid_v2, block >> > (bond_rn, path_ext, 0, bond->sigma);
+	//rng->generate_sobol_normal(bond_rn, 1, path_ext, bond->sigma);
+
+	////* == STOCK ==
+	//** RN is used as the external path
+	//** For stock pricing only, there's no need to generate the inner path now
+	//** [path_ext, var_t]
+	//*/
+	//CUDA_CALL(cudaMalloc((void**)&stock_rn, path_ext * sizeof(float)));
+	//rng->generate_sobol(stock_rn, var_t, path_ext);
+	//rng->convert_normal(stock_rn, var_t * path_ext);
 //
 //	/* == Basket Option ==
 //	** Need two set of random numbers
@@ -195,18 +225,46 @@ double NestedMonteCarloVaR::execute() {
 //	*/
 //	int bsk_n = bskop->n;
 //	// Random number sequence for basket option(outer loop)
-//	float* bskop_ext_rn = (float*)malloc((size_t)path_ext * bsk_n * sizeof(float));
+//	float* bskop_ext_rn;
+//	CUDA_CALL(cudaMalloc((void**)&bskop_ext_rn, path_ext * bsk_n * sizeof(float)));
 //	rng->generate_sobol(bskop_ext_rn, bsk_n, path_ext);
 //	rng->convert_normal(bskop_ext_rn, path_ext * bsk_n);
 //
 //	// Random number sequence for basket option(inner loop)
-//	bskop_rn = (float*)malloc((size_t)path_ext * path_int * bsk_n * sizeof(float));
-//	float* bskop_tmp_rn = (float*)malloc((size_t)path_ext * path_int * bsk_n * sizeof(float));
+//	//bskop_rn = (float*)malloc((size_t)path_ext * path_int * bsk_n * sizeof(float));
+//	CUDA_CALL(cudaMalloc((void**)&bskop_rn, path_ext * path_ext * bsk_n * sizeof(float)));
+//	//float* bskop_tmp_rn = (float*)malloc((size_t)path_ext * path_int * bsk_n * sizeof(float));
+//	float* bskop_tmp_rn;
+//	CUDA_CALL(cudaMalloc((void**)&bskop_tmp_rn, path_ext * path_ext * bsk_n * sizeof(float)));
 //	rng->generate_sobol(bskop_tmp_rn, bsk_n, path_ext * path_int);
 //	rng->convert_normal(bskop_tmp_rn, path_ext * path_int * bsk_n);
 //
 //	// Covariance transformation
 //	// A[n * n]*rn[n * (path_ext * path_int)]
+//	cublasHandle_t handle;
+//	CUBLAS_CALL(cublasCreate(&handle));
+//	/*		
+////(m*n) =((n*n)*(n*m))^T
+//	CUBLAS_CALL(cublasSgemm(handle,		//handle to the cuBLAS library context.
+//		CUBLAS_OP_T,					//operation op(A) that is non- or (conj.) transpose.
+//		CUBLAS_OP_T,					//operation op(B) that is non- or (conj.) transpose.
+//		N,								//number of rows of matrix op(A) and C.
+//		M,								//number of columns of matrix op(B) and C.
+//		N,								//number of columns of op(A) and rows of op(B).
+//		&one,							//<type> scalar used for multiplication.
+//		Q_dev,							//<type> array of dimensions lda x k with lda>=max(1,m) if transa == CUBLAS_OP_N and lda x m with lda>=max(1,k) otherwise
+//		N,								//leading dimension of two-dimensional array used to store the matrix A.
+//		x_dev,							//<type> array of dimension ldb x n with ldb>=max(1,k) if transb == CUBLAS_OP_N and ldb x k with ldb>=max(1,n) otherwise.
+//		M,								//leading dimension of two-dimensional array used to store matrix B.
+//		&zero,							//<type> scalar used for multiplication. If beta==0, C does not have to be a valid input.
+//		Y_dev,							//<type> array of dimensions ldc x n with ldc>=max(1,m).
+//		N));							//	leading dimension of a two - dimensional array used to store the matrix C.
+//
+//	cublasSgemm(
+//		handle,
+//
+//		)
+//
 //	cblas_sgemm(CblasRowMajor,
 //		CblasNoTrans,
 //		CblasTrans,
@@ -222,7 +280,7 @@ double NestedMonteCarloVaR::execute() {
 //		bskop_rn,							// C
 //		path_ext * path_int					// col of C
 //	);
-//
+	//
 //	free(bskop_tmp_rn);
 //
 //	/* == Barrier Option ==
@@ -251,15 +309,15 @@ double NestedMonteCarloVaR::execute() {
 //	}*/
 //
 //
-//
-//	// ====================================================
-//	//            Outter Monte Carlo Simulation
-//	// ====================================================
-//	// Store by row
-//	int row_idx = 0;
-//	prices = (float*)malloc((size_t)path_ext * port_n * sizeof(float));
-//
-//
+
+	// ====================================================
+	//            Outter Monte Carlo Simulation
+	// ====================================================
+	// Store by row
+	int row_idx = 0;
+	prices = (float*)malloc((size_t)path_ext * port_n * sizeof(float));
+
+
 //	/* ====================
 //	** ==      Bond      ==
 //	** ==================== */

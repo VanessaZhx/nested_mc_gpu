@@ -2,6 +2,8 @@
 #ifndef NMC_H
 #define NMC_H
 
+#include "cublas_v2.h"
+
 #include "RNG.cuh"
 #include "Bond.h"
 #include "Stock.h"
