@@ -36,12 +36,11 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
     <Import Project="..\..\config_files\opencv.props" />
     <Import Project="..\..\config_files\curand.props" />
-    <Import Project="..\..\config_files\Intel MKL.props" />
-    <Import Project="..\..\config_files\cublas.props" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="..\..\config_files\cublas.props" />
+    <Import Project="..\..\config_files\opencv.props" />
+    <Import Project="..\..\config_files\curand.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -52,6 +51,7 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>WIN32;WIN64;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -60,6 +60,7 @@
     </Link>
     <CudaCompile>
       <TargetMachinePlatform>64</TargetMachinePlatform>
+      <CudaRuntime>Static</CudaRuntime>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -83,19 +84,22 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <CudaCompile Include="kernel.cu" />
-    <CudaCompile Include="NestedMonteCarloVaR.cu" />
+    <CudaCompile Include="NestedMonteCarloVaR.cu">
+      <FileType>Document</FileType>
+    </CudaCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="BarrierOption.h" />
-    <ClInclude Include="BasketOption.h" />
     <ClInclude Include="Bond.h" />
     <ClInclude Include="cuda_helper.cuh" />
-    <ClInclude Include="NestedMonteCarloVaR.cuh" />
-    <ClInclude Include="RNG.cuh" />
-    <ClInclude Include="Stock.h" />
+    <ClInclude Include="NestedMonteCarloVaR.cuh">
+      <FileType>CppCode</FileType>
+    </ClInclude>
+    <CudaCompile Include="RNG.cuh" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="RNG.cu" />
+    <CudaCompile Include="RNG.cu">
+      <FileType>Document</FileType>
+    </CudaCompile>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

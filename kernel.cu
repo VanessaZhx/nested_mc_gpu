@@ -32,12 +32,12 @@ int main()
 	const float stock_var = 0.13f;			// Volatility
 	const int stock_x = 100;					// Number of shares
 
-	Stock* s1 = new Stock(stock_s0, stock_mu, stock_var, 100);
-	Stock* s2 = new Stock(stock_s0, stock_mu, stock_var, 100);
+//	Stock* s1 = new Stock(stock_s0, stock_mu, stock_var, 100);
+//	Stock* s2 = new Stock(stock_s0, stock_mu, stock_var, 100);
 	const int bskop_n = 2;								// Number of stocks in basket
 	const float bskop_k = 3100.0f;						// Execution price
 	const int bskop_t = 1;								// Maturity of basket option
-	Stock bskop_stocks[bskop_n] = { *s1, *s2 };			// List of stocks
+//	Stock bskop_stocks[bskop_n] = { *s1, *s2 };			// List of stocks
 	float bskop_cov[bskop_n * bskop_n] = { 1.0f, 0.5f,
 										   0.5f, 1.0f };	// Covariance matrix
 	float bskop_w[bskop_n] = { 0.5f, 0.5f };				// weight
