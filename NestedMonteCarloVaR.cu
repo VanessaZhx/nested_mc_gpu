@@ -184,6 +184,31 @@ __global__ void moro_inv_v2(float* data, int cnt, float mean, float std) {
 
 }
 
+__global__ void price_bond(float* rn, int cnt, 
+	float bond_par, float bond_c, int bond_m, float* bond_y, 
+	float *prices) {
+	
+	// Naive implementation
+	// Each thread handle one outter, calculate the price and store it
+
+	size_t Idx = threadIdx.x + blockDim.x * blockIdx.x;
+	if (Idx >= cnt) return;
+	
+	float d = rn[Idx];
+	float price = 0.0f;
+	// Loop to sum the coupon price until the maturity
+	for (int i = 0; i < bond_m; i++) {
+		price += bond_c /
+			powf((float)(1.0f + (bond_y[i] + d) / 100.0f), i + 1);
+	}
+	// Add the face value
+	price += bond_par /
+		powf((float)(1.0f + (bond_y[bond_m - 1] + d) / 100.0f), bond_m);
+
+	// Store in prices matrix
+	prices[Idx] = price;
+}
+
 
 double NestedMonteCarloVaR::execute() {
 	chrono::steady_clock::time_point start = chrono::steady_clock::now();
@@ -198,25 +223,30 @@ double NestedMonteCarloVaR::execute() {
 	** RN is used to move yield curve up/down, N~(0, sigma^2)
 	** [path_ext, 1]
 	*/
-	CUDA_CALL(cudaMalloc((void**)&bond_rn, path_ext * sizeof(float)));
+	// Set up and allocate
+	dim3 grid_bond_rn((path_ext - 1) / block.x + 1, 1);
+	CUDA_CALL(cudaMallocManaged((void**)&bond_rn, path_ext * sizeof(float)));
+
+	// Generate and convert
 	rng->generate_sobol(bond_rn, 1, path_ext);
-	dim3 grid_v1((path_ext - 1) / block.x + 1, 1);
-	moro_inv << < grid_v1, block >> > (bond_rn, path_ext, 0, bond->sigma);
+	moro_inv << < grid_bond_rn, block >> > (bond_rn, path_ext, 0, bond->sigma);
+
+	cudaDeviceSynchronize();
 
 	//dim3 grid_v2((path_ext - 1) / (block.x * DATA_BLOCK) + 1, 1);
 	//moro_inv_v2 << < grid_v2, block >> > (bond_rn, path_ext, 0, bond->sigma);
 	//rng->generate_sobol_normal(bond_rn, 1, path_ext, bond->sigma);
 
-	float *bond_rn_host = (float*)malloc((size_t)path_ext * sizeof(float));
+	/*float *bond_rn_host = (float*)malloc((size_t)path_ext * sizeof(float));
 	CUDA_CALL(cudaMemcpy(bond_rn_host, 
 		bond_rn, 
 		path_ext * sizeof(float), 
 		cudaMemcpyDeviceToHost
-	));
+	));*/
 
 	cout << "Random Numbers:\n";
 	for (int i = 0; i < path_ext; i++) {
-		cout << bond_rn_host[i] << " ";
+		cout << bond_rn[i] << " ";
 		cout << endl;
 	}
 
@@ -328,29 +358,38 @@ double NestedMonteCarloVaR::execute() {
 	// ====================================================
 	// Store by row
 	int row_idx = 0;
-	prices = (float*)malloc((size_t)path_ext * port_n * sizeof(float));
 
+	// Save the prices
+	CUDA_CALL(cudaMallocManaged((void**)&prices, path_ext* port_n * sizeof(float)));
 
 	/* ====================
 	** ==      Bond      ==
 	** ==================== */
-	float price = 0.0f;
-	for (int i = 0; i < path_ext; i++) {
-		price = 0.0f;
-		// Loop to sum the coupon price until the maturity
-		for (int i = 0; i < bond->bond_m; i++) {
-			price += bond->bond_c /
-				powf(1.0f + (bond->bond_y[i] + bond_rn_host[i]) / 100, float(i + 1));
-		}
-		// Add the face value
-		price += bond->bond_par /
-			powf(1.0f + (bond->bond_y[bond->bond_m - 1] + bond_rn_host[i]) / 100, float(bond->bond_m));
+	dim3 grid_bond((path_ext - 1) / block.x + 1, 1);
 
-		// Store to first row of prices matrix
-		prices[row_idx * path_ext + i] = price;
-
+	// Use Unified Memory and copy bond info to device
+	float* bond_y;
+	CUDA_CALL(cudaMallocManaged((void**)&bond_y, bond->bond_m * sizeof(float)));
+	for (int i = 0; i < bond->bond_m; i++) {
+		bond_y[i] = bond->bond_y[i];
 	}
+	
+	// Pricing bond
+	price_bond << <grid_bond, block >> > (
+		bond_rn, 
+		path_ext, 
+		bond->bond_par, bond->bond_c, bond->bond_m, 
+		bond_y,
+		&prices[row_idx * path_ext]
+	);
+	
+	cudaDeviceSynchronize();
+
+	CUDA_CALL(cudaFree(bond_y));
+
 	row_idx++;
+
+
 //
 //
 //
@@ -489,8 +528,17 @@ double NestedMonteCarloVaR::execute() {
 //	free(barop_ext_rn);
 //
 	// Reset
+
+
 	row_idx = 0;
 	rng->set_offset(1024);
+
+	/*CUDA_CALL(cudaMemcpy(prices,
+		prices_dev,
+		path_ext * port_n * sizeof(float),
+		cudaMemcpyDeviceToHost
+	));*/
+
 
 	cout << endl << "Prices:" << endl;
 	for (int i = 0; i < port_n; i++) {
@@ -499,6 +547,7 @@ double NestedMonteCarloVaR::execute() {
 		}
 		cout << endl;
 	}
+
 	cout << endl << "Start Price:" << endl;
 	cout << port_p0 << endl;
 
@@ -578,6 +627,9 @@ double NestedMonteCarloVaR::execute() {
 	//free(bond_rn);
 	////free(barop_rn);
 	////delete(rng);
+
+	CUDA_CALL(cudaFree(bond_rn));
+	CUDA_CALL(cudaFree(prices));
 
 	chrono::steady_clock::time_point end = chrono::steady_clock::now();
 	chrono::duration<double, std::milli> elapsed = end - start;

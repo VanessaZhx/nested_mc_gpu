@@ -7,7 +7,7 @@
 using namespace std;
 
 #define CUDA_CALL(x) do { if((x) != cudaSuccess) { \
-    std::cout << "\nError at "<<__FILE__<<":"<<__LINE__<<": "<<x<<"\n"; \
+    std::cout << "\nError at "<<__FILE__<<":"<<__LINE__<<": "<<cudaGetErrorString(x)<<"\n"; \
     return EXIT_FAILURE;}} while(0)
 
 #define CURAND_CALL(x) do { if((x) != CURAND_STATUS_SUCCESS) { \
