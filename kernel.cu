@@ -4,7 +4,7 @@ int main()
 {
 	const int exp_times = 1;   // Total times of MC
 
-	const int path_ext = 10;  // Number of the outer MC loops
+	const int path_ext = 1024;  // Number of the outer MC loops
 	const int path_int = 1024;  // Number of the inner MC loops
 
 	const int var_t = 1;					// VaR duration

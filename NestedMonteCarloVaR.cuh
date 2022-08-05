@@ -2,7 +2,7 @@
 #ifndef NMC_H
 #define NMC_H
 
-//#include "cublas_v2.h"
+#include "cublas_v2.h"
 
 #include "RNG.cuh"
 #include "Bond.h"
@@ -10,7 +10,7 @@
 //#include "BasketOption.h"
 //#include "BarrierOption.h"
 
-//#include <mkl.h>
+#include <mkl.h>
 #include <math.h>
 #include <algorithm>
 #include <chrono>

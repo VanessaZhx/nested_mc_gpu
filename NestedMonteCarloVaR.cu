@@ -244,11 +244,11 @@ double NestedMonteCarloVaR::execute() {
 		cudaMemcpyDeviceToHost
 	));*/
 
-	cout << "Random Numbers:\n";
+	/*cout << "Random Numbers:\n";
 	for (int i = 0; i < path_ext; i++) {
 		cout << bond_rn[i] << " ";
 		cout << endl;
-	}
+	}*/
 
 	////* == STOCK ==
 	//** RN is used as the external path
@@ -527,20 +527,14 @@ double NestedMonteCarloVaR::execute() {
 //	}
 //	free(barop_ext_rn);
 //
+
 	// Reset
-
-
 	row_idx = 0;
 	rng->set_offset(1024);
 
-	/*CUDA_CALL(cudaMemcpy(prices,
-		prices_dev,
-		path_ext * port_n * sizeof(float),
-		cudaMemcpyDeviceToHost
-	));*/
 
 
-	cout << endl << "Prices:" << endl;
+	/*cout << endl << "Prices:" << endl;
 	for (int i = 0; i < port_n; i++) {
 		for (int j = 0; j < path_ext; j++) {
 			cout << prices[i * path_ext + j] << " ";
@@ -549,7 +543,7 @@ double NestedMonteCarloVaR::execute() {
 	}
 
 	cout << endl << "Start Price:" << endl;
-	cout << port_p0 << endl;
+	cout << port_p0 << endl;*/
 
 
 
@@ -558,67 +552,98 @@ double NestedMonteCarloVaR::execute() {
 	//						Loss
 	// ====================================================
 	// Fill loss with negtive today's price of the portfolio
-	float* loss = (float*)malloc((size_t)path_ext * sizeof(float));
+	cublasHandle_t handle;
+	CUBLAS_CALL(cublasCreate(&handle));
+	
+	float* loss = NULL, *w = NULL;
+	CUDA_CALL(cudaMallocManaged((void**)&loss, path_ext * sizeof(float)));
+	CUDA_CALL(cudaMallocManaged((void**)&w, port_n * sizeof(float)));
 	for (int i = 0; i < path_ext; i++) {
 		loss[i] = port_p0;
+		//loss[i] = 0;
+	}
+	for (int i = 0; i < port_n; i++) {
+		w[i] = port_w[i];
 	}
 
-	//// prices[port_n][path_ext]
-	//// prices[path_ext * port_n] * w[port_n * 1]
-	//// Loss = -(p-p0) = p0-p
-	//// Loss = p0 - e^-rT * (price*w) = loss + (- e^-rT) *(price*w)
-	//// haven't get ln here, but doesn't affect sorting
-	//cblas_sgemv(CblasRowMajor,			// Specifies row-major
-	//	CblasTrans,						// Specifies whether to transpose matrix A.
-	//	port_n,							// A rows
-	//	path_ext,						// A col
-	//	-exp(-1 * risk_free * var_t),	// alpha
-	//	prices,							// A
-	//	path_ext,						// The size of the first dimension of matrix A.
-	//	port_w,							// Vector X.
-	//	1,								// Stride within X. 
-	//	1,								// beta
-	//	loss,							// Vector Y
-	//	1);								// Stride within Y
+	// prices[port_n][path_ext]
+	// prices[path_ext * port_n] * w[port_n * 1]
+	// Loss = -(p-p0) = p0-p
+	// Loss = p0 - e^-rT * (price*w) = loss + (- e^-rT) *(price*w)
+	// haven't get ln here, but doesn't affect sorting
+	float discount = -exp(-1.0f * risk_free * var_t);
+	float one = 1.0f;
+	//float zero = 0.0f;
+	CUBLAS_CALL(cublasSgemv(handle,
+		CUBLAS_OP_T,	// Use storage by row
+		port_n,			// rows of A
+		path_ext,		// cols of A
+		&discount,		// alpha
+		prices,			// A
+		port_n,			// leading dimension of two-dimensional array used to store matrix A.
+		w,				// x
+		1,				// stride of x
+		&one,			// beta
+		loss,			// y
+		1				// stride of y
+	));
+	CUDA_CALL(cudaDeviceSynchronize());
 
-	//cout << endl << "Loss:" << endl;
-	//for (int i = 0; i < path_ext; i++) {
-	//	cout << loss[i] << " ";
-	//}
-	//cout << endl;
+	CUDA_CALL(cudaFree(w));
+	CUBLAS_CALL(cublasDestroy(handle));
 
 
+	/*cout << endl << "Loss:" << endl;
+	for (int i = 0; i < path_ext; i++) {
+		cout << loss[i] << " ";
+	}
+	cout << endl;*/
+
+	//CUBLAS_CALL(cublasSgemm(handle,
+	//	CUBLAS_OP_T,	// transa
+	//	CUBLAS_OP_T,	// transb
+	//	N,				// rows of C
+	//	M,				// col of C
+	//	N,				// number of columns of op(A) and rows of op(B).(Multi by)
+	//	&one,			// alpha
+	//	Q_dev,			// A
+	//	N,				// leading dimension of two-dimensional array used to store the matrix A.
+	//	x_dev,			// B
+	//	M,				// leading dimension of two-dimensional array used to store the matrix B
+	//	&zero,			// beta
+	//	Y_dev,			// C
+	//	N));			// leading dimension of a two-dimensional array used to store the matrix C.
 
 
-	//// ====================================================
-	////						Sort
-	//// ====================================================
-	//std::sort(loss, loss + path_ext);
+	// ====================================================
+	//						Sort
+	// ====================================================
+	std::sort(loss, loss + path_ext);
 
-	//cout << endl << "Sorted Loss:" << endl;
-	//for (int i = 0; i < path_ext; i++) {
-	//	std::cout << loss[i] << " ";
-	//}
-	//cout << endl;
+	/*cout << endl << "Sorted Loss:" << endl;
+	for (int i = 0; i < path_ext; i++) {
+		std::cout << loss[i] << " ";
+	}
+	cout << endl;*/
 
 	////output_res(loss, path_ext);
 
 
-	//// ====================================================
-	////				Calculate var and cvar
-	//// ====================================================
-	//int pos = (int)floor(path_ext * var_per);
+	// ====================================================
+	//				Calculate var and cvar
+	// ====================================================
+	int pos = (int)floor(path_ext * var_per);
 
-	//float var = loss[pos];
-	//float cvar = 0;
-	//for (int i = pos; i < path_ext; i++) {
-	//	cvar += loss[i];
-	//}
-	//cvar /= path_ext - pos;
+	float var = loss[pos];
+	float cvar = 0;
+	for (int i = pos; i < path_ext; i++) {
+		cvar += loss[i];
+	}
+	cvar /= path_ext - pos;
 
-	//cout << endl;
-	//cout << "var:" << var << endl;
-	//cout << "cvar:" << cvar << endl;
+	cout << endl;
+	cout << "var:" << var << endl;
+	cout << "cvar:" << cvar << endl;
 
 	//free(loss);
 	//free(prices);
@@ -630,6 +655,7 @@ double NestedMonteCarloVaR::execute() {
 
 	CUDA_CALL(cudaFree(bond_rn));
 	CUDA_CALL(cudaFree(prices));
+	CUDA_CALL(cudaFree(loss));
 
 	chrono::steady_clock::time_point end = chrono::steady_clock::now();
 	chrono::duration<double, std::milli> elapsed = end - start;
