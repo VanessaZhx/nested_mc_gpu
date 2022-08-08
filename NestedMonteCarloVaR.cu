@@ -209,6 +209,23 @@ __global__ void price_bond(float* rn, int cnt,
 	prices[Idx] = price;
 }
 
+__global__ void price_stock(float* rn, int cnt,
+	float s0, float mean, float std, int x, int t,
+	float* prices) {
+
+	// Naive implementation
+	// Each thread handle one outter, calculate the price and store it
+
+	size_t Idx = threadIdx.x + blockDim.x * blockIdx.x;
+	if (Idx >= cnt) return;
+
+	// Store in prices matrix
+	prices[Idx] = x * s0 * exp((mean - 0.5f * std * std) * t
+			+ std * sqrtf(float(t)) * rn[Idx]);
+
+	
+}
+
 
 double NestedMonteCarloVaR::execute() {
 	chrono::steady_clock::time_point start = chrono::steady_clock::now();
@@ -244,20 +261,29 @@ double NestedMonteCarloVaR::execute() {
 		cudaMemcpyDeviceToHost
 	));*/
 
-	/*cout << "Random Numbers:\n";
-	for (int i = 0; i < path_ext; i++) {
-		cout << bond_rn[i] << " ";
-		cout << endl;
-	}*/
+	
 
-	////* == STOCK ==
-	//** RN is used as the external path
-	//** For stock pricing only, there's no need to generate the inner path now
-	//** [path_ext, var_t]
-	//*/
-	//CUDA_CALL(cudaMalloc((void**)&stock_rn, path_ext * sizeof(float)));
-	//rng->generate_sobol(stock_rn, var_t, path_ext);
-	//rng->convert_normal(stock_rn, var_t * path_ext);
+	/* == STOCK ==
+	** RN is used as the external path
+	** For stock pricing only, there's no need to generate the inner path now
+	** [path_ext, var_t]
+	*/
+	dim3 grid_stock_rn((path_ext - 1) / block.x + 1, 1);
+	CUDA_CALL(cudaMallocManaged((void**)&stock_rn, path_ext * sizeof(float)));
+	/*rng->generate_sobol(stock_rn, var_t, path_ext);
+	rng->convert_normal(stock_rn, var_t * path_ext);*/
+	rng->generate_sobol(stock_rn, 1, path_ext);
+	moro_inv << < grid_stock_rn, block >> > (stock_rn, path_ext, 0, 1);
+
+	cudaDeviceSynchronize();
+
+	cout << "Random Numbers:\n";
+	for (int i = 0; i < path_ext; i++) {
+		cout << stock_rn[i] << " ";
+		cout << endl;
+	}
+
+
 //
 //	/* == Basket Option ==
 //	** Need two set of random numbers
@@ -362,6 +388,8 @@ double NestedMonteCarloVaR::execute() {
 	// Save the prices
 	CUDA_CALL(cudaMallocManaged((void**)&prices, path_ext* port_n * sizeof(float)));
 
+	//float *pr = (float*)malloc((size_t)path_ext * port_n * sizeof(float));
+
 	/* ====================
 	** ==      Bond      ==
 	** ==================== */
@@ -390,24 +418,31 @@ double NestedMonteCarloVaR::execute() {
 	row_idx++;
 
 
-//
-//
-//
-//
-//	/* ====================
-//	** ==     Stock      ==
-//	** ==================== */
-//	for (int i = 0; i < path_ext; i++) {
-//		// Store to the next row of price matrix
-//		prices[row_idx * path_ext + i] = stock->x * stock->s0
-//			* exp((stock->mu - 0.5f * stock->var * stock->var) * var_t
-//				+ stock->var * sqrtf(float(var_t)) * stock_rn[i]);
-//	}
-//	row_idx++;
-//
-//
-//
-//
+
+
+
+
+	/* ====================
+	** ==     Stock      ==
+	** ==================== */
+	dim3 grid_stock((path_ext - 1) / block.x + 1, 1);
+
+	// Pricing bond
+	price_stock << <grid_stock, block >> > (
+		stock_rn,
+		path_ext,
+		stock->s0, stock->mean, stock->std,
+		stock->x, var_t,
+		&prices[row_idx * path_ext]
+		);
+
+	cudaDeviceSynchronize();
+
+	row_idx++;
+
+
+
+
 //	/* ====================
 //	** == Basket Option ==
 //	** ==================== */
@@ -532,9 +567,16 @@ double NestedMonteCarloVaR::execute() {
 	row_idx = 0;
 	rng->set_offset(1024);
 
+	/*cout << endl << "pr:" << endl;
+	for (int i = 0; i < port_n; i++) {
+		for (int j = 0; j < path_ext; j++) {
+			cout << pr[i * path_ext + j] << " ";
+		}
+		cout << endl;
+	}*/
 
 
-	/*cout << endl << "Prices:" << endl;
+	cout << endl << "Prices:" << endl;
 	for (int i = 0; i < port_n; i++) {
 		for (int j = 0; j < path_ext; j++) {
 			cout << prices[i * path_ext + j] << " ";
@@ -543,7 +585,7 @@ double NestedMonteCarloVaR::execute() {
 	}
 
 	cout << endl << "Start Price:" << endl;
-	cout << port_p0 << endl;*/
+	cout << port_p0 << endl;
 
 
 
@@ -560,7 +602,6 @@ double NestedMonteCarloVaR::execute() {
 	CUDA_CALL(cudaMallocManaged((void**)&w, port_n * sizeof(float)));
 	for (int i = 0; i < path_ext; i++) {
 		loss[i] = port_p0;
-		//loss[i] = 0;
 	}
 	for (int i = 0; i < port_n; i++) {
 		w[i] = port_w[i];
@@ -647,7 +688,6 @@ double NestedMonteCarloVaR::execute() {
 
 	//free(loss);
 	//free(prices);
-	////free(stock_rn);
 	////free(bskop_rn);
 	//free(bond_rn);
 	////free(barop_rn);
@@ -656,6 +696,7 @@ double NestedMonteCarloVaR::execute() {
 	CUDA_CALL(cudaFree(bond_rn));
 	CUDA_CALL(cudaFree(prices));
 	CUDA_CALL(cudaFree(loss));
+	CUDA_CALL(cudaFree(stock_rn));
 
 	chrono::steady_clock::time_point end = chrono::steady_clock::now();
 	chrono::duration<double, std::milli> elapsed = end - start;

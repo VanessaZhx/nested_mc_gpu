@@ -4,15 +4,15 @@ class Stock{
 
 public:
 	float s0;
-	float mu;
-	float var;
+	float mean;
+	float std;
 	int x;
 
 
-	Stock(float s0, float mu, float var, int x) {
+	Stock(float s0, float mean, float std, int x) {
 		this->s0 = s0;
-		this->mu = mu;
-		this->var = var;
+		this->mean = mean;
+		this->std = std;
 		this->x = x;
 	}
 
