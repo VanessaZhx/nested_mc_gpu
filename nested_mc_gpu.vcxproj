@@ -97,6 +97,7 @@
     <ClInclude Include="NestedMonteCarloVaR.cuh">
       <FileType>CppCode</FileType>
     </ClInclude>
+    <ClInclude Include="Stock.h" />
     <CudaCompile Include="RNG.cuh" />
   </ItemGroup>
   <ItemGroup>

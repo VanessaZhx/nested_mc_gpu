@@ -35,16 +35,16 @@ void NestedMonteCarloVaR::bond_init(float bond_par, float bond_c, int bond_m,
 	this->port_p0 += price * port_w[idx];
 }
 
-//void NestedMonteCarloVaR::stock_init(float stock_s0, float stock_mu,
-//	float stock_var, int stock_x, int idx) {
-//
-//	// Product initiation
-//	stock = new Stock(stock_s0, stock_mu, stock_var, stock_x);
-//
-//	// add to the portfolio price
-//	this->port_p0 += stock_s0 * stock_x * port_w[idx];
-//}
-//
+void NestedMonteCarloVaR::stock_init(float stock_s0, float stock_mu,
+	float stock_var, int stock_x, int idx) {
+
+	// Product initiation
+	stock = new Stock(stock_s0, stock_mu, stock_var, stock_x);
+
+	// add to the portfolio price
+	this->port_p0 += stock_s0 * stock_x * port_w[idx];
+}
+
 //void NestedMonteCarloVaR::bskop_init(int bskop_n, Stock* bskop_stocks,
 //	float* bskop_cov, float bskop_k, float* bskop_w, int bskop_t, int idx) {
 //
