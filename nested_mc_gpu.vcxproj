@@ -86,13 +86,16 @@
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <CudaCompile Include="CUDAPricing.cu" />
     <CudaCompile Include="kernel.cu" />
     <CudaCompile Include="NestedMonteCarloVaR.cu">
       <FileType>Document</FileType>
     </CudaCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="BasketOption.h" />
     <ClInclude Include="Bond.h" />
+    <ClInclude Include="CUDAPricing.cuh" />
     <ClInclude Include="cuda_helper.cuh" />
     <ClInclude Include="NestedMonteCarloVaR.cuh">
       <FileType>CppCode</FileType>

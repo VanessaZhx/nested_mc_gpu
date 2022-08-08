@@ -1,5 +1,5 @@
 #include "NestedMonteCarloVaR.cuh"
-#define DATA_BLOCK 32
+
 
 using namespace std;
 
@@ -45,79 +45,88 @@ void NestedMonteCarloVaR::stock_init(float stock_s0, float stock_mu,
 	this->port_p0 += stock_s0 * stock_x * port_w[idx];
 }
 
-//void NestedMonteCarloVaR::bskop_init(int bskop_n, Stock* bskop_stocks,
-//	float* bskop_cov, float bskop_k, float* bskop_w, int bskop_t, int idx) {
-//
-//	// Product initiation
-//	bskop = new BasketOption(bskop_n, bskop_stocks, bskop_cov, bskop_k, bskop_w);
-//
-//	this->bskop_t = bskop_t;
-//
-//	// Simulate start price
-//	float* rn = (float*)malloc((size_t)path_int * bskop_n * sizeof(float));
-//	float* tmp_rn = (float*)malloc((size_t)path_int * bskop_n * sizeof(float));
-//	rng->generate_sobol(tmp_rn, bskop_n, path_int);
-//	rng->convert_normal(tmp_rn, path_int * bskop_n);
-//	cblas_sgemm(CblasRowMajor,
-//		CblasNoTrans,
-//		CblasTrans,
-//		bskop_n,								// result row
-//		path_int,								// result col
-//		bskop_n,								// length of "multiple by"
-//		1,										// alpha
-//		bskop->A,								// A
-//		bskop_n,								// col of A
-//		tmp_rn,									// B
-//		bskop_n,								// col of B
-//		0,										// beta
-//		rn,										// C
-//		path_int								// col of C
-//	);
-//
-//	// Price the start value
-//	float* value_each = (float*)malloc((size_t)path_int * bskop_n * sizeof(float));
-//	float* value_weighted = (float*)malloc((size_t)path_int * sizeof(float));
-//	Stock* s;
-//
-//	for (int i = 0; i < bskop_n; i++) {
-//		s = &(bskop_stocks[i]);
-//		for (int j = 0; j < path_int; j++) {
-//			value_each[i * path_int + j] = s->x * s->s0
-//				* exp((s->mu - 0.5f * s->var * s->var) * bskop_t
-//					+ s->var * sqrtf(float(bskop_t)) * rn[i * path_int + j]);
-//		}
-//	}
-//
-//	cblas_sgemv(CblasRowMajor,				// Specifies row-major
-//		CblasTrans,							// Specifies whether to transpose matrix A.
-//		bskop_n,							// A rows
-//		path_int,							// A col
-//		1,									// alpha	
-//		value_each,							// A
-//		path_int,							// The size of the first dimension of matrix A.
-//		bskop_w,							// Vector X.
-//		1,									// Stride within X. 
-//		0,									// beta
-//		value_weighted,						// Vector Y
-//		1									// Stride within Y
-//	);
-//
-//	float call = 0.0f;
-//	for (int i = 0; i < path_int; i++) {
-//		call += (value_weighted[i] > bskop_k) ? (value_weighted[i] - bskop_k) : 0;
-//	}
-//	call /= path_int;
-//
-//	free(value_each);
-//	free(value_weighted);
-//	free(tmp_rn);
-//	free(rn);
-//
-//	// add to the portfolio price
-//	this->port_p0 += call * port_w[idx];
-//}
-//
-//
+void NestedMonteCarloVaR::bskop_init(int bskop_n, Stock* bskop_stocks,
+	float* bskop_cov, float bskop_k, float* bskop_w, int bskop_t, int idx) {
+
+	// Product initiation
+	bskop = new BasketOption(bskop_n, bskop_stocks, bskop_cov, bskop_k, bskop_w);
+
+	this->bskop_t = bskop_t;
+
+	// Simulate start price
+	float* rn = (float*)malloc((size_t)path_int * bskop_n * sizeof(float));
+	float* tmp_rn;
+	cudaError x = cudaMallocManaged((void**)&tmp_rn, path_int * bskop_n * sizeof(float));
+	if (x != cudaSuccess) {
+		std::cout << "\nError at " << __FILE__ << ":"
+			<< __LINE__ << ": " << cudaGetErrorString(x) << "\n";
+		return;
+	}
+
+	// Generate and convert with cholesky matrix
+	rng->generate_sobol_normal(tmp_rn, bskop_n, path_int);
+	cudaDeviceSynchronize();
+
+	cblas_sgemm(CblasRowMajor,
+		CblasNoTrans,
+		CblasTrans,
+		bskop_n,								// result row
+		path_int,								// result col
+		bskop_n,								// length of "multiple by"
+		1,										// alpha
+		bskop->A,								// A
+		bskop_n,								// col of A
+		tmp_rn,									// B
+		bskop_n,								// col of B
+		0,										// beta
+		rn,										// C
+		path_int								// col of C
+	);
+
+	// Price the start value
+	float* value_each = (float*)malloc((size_t)path_int * bskop_n * sizeof(float));
+	float* value_weighted = (float*)malloc((size_t)path_int * sizeof(float));
+	Stock* s;
+
+	for (int i = 0; i < bskop_n; i++) {
+		s = &(bskop_stocks[i]);
+		for (int j = 0; j < path_int; j++) {
+			value_each[i * path_int + j] = s->x * s->s0
+				* exp((s->mean - 0.5f * s->std * s->std) * bskop_t
+					+ s->std * sqrtf(float(bskop_t)) * rn[i * path_int + j]);
+		}
+	}
+
+	cblas_sgemv(CblasRowMajor,				// Specifies row-major
+		CblasTrans,							// Specifies whether to transpose matrix A.
+		bskop_n,							// A rows
+		path_int,							// A col
+		1,									// alpha	
+		value_each,							// A
+		path_int,							// The size of the first dimension of matrix A.
+		bskop_w,							// Vector X.
+		1,									// Stride within X. 
+		0,									// beta
+		value_weighted,						// Vector Y
+		1									// Stride within Y
+	);
+
+	float call = 0.0f;
+	for (int i = 0; i < path_int; i++) {
+		call += (value_weighted[i] > bskop_k) ? (value_weighted[i] - bskop_k) : 0;
+	}
+	call /= path_int;
+
+	free(value_each);
+	free(value_weighted);
+	cudaFree(tmp_rn);
+	free(rn);
+
+	// add to the portfolio price
+	this->port_p0 += call * port_w[idx];
+}
+
+
 //void NestedMonteCarloVaR::barop_int(Stock* barop_stock, float barop_k,
 //	float barop_h, int barop_t, int idx) {
 //	// Product initiation
@@ -140,8 +149,8 @@ void NestedMonteCarloVaR::stock_init(float stock_s0, float stock_mu,
 //		// Loop over steps in one path, get max price
 //		for (int k = 0; k < barop_t; k++) {
 //			// Calculate price at this step
-//			barop_price = s->s0 * exp((s->mu - 0.5f * s->var * s->var) * k
-//				+ s->var * sqrtf(float(k)) * temp_rn[j * barop_t + k]);
+//			barop_price = s->s0 * exp((s->mean - 0.5f * s->std * s->std) * k
+//				+ s->std * sqrtf(float(k)) * temp_rn[j * barop_t + k]);
 //
 //			// Check maximum
 //			if (barop_price > barop_max_price) {
@@ -163,68 +172,7 @@ void NestedMonteCarloVaR::stock_init(float stock_s0, float stock_mu,
 //	this->port_p0 += s->x * (call / path_int) * port_w[idx];
 //}
 
-__global__ void moro_inv(float* data, int cnt, float mean, float std) {
-	// Each thread will handle one transfer
-	size_t Idx = threadIdx.x + blockDim.x * blockIdx.x;
-	if (Idx >= cnt) return;
 
-	data[Idx] = normcdfinvf(data[Idx]) * std + mean;
-}
-
-__global__ void moro_inv_v2(float* data, int cnt, float mean, float std) {
-	// Each thread will handle DATA_BLOCK transfer
-	size_t Idx = threadIdx.x + blockDim.x * blockIdx.x;
-	if (Idx >= cnt) return;
-
-	float* data_p = &data[Idx * DATA_BLOCK];
-
-	for (int i = 0; i < DATA_BLOCK; i++) {
-		data_p[i] = normcdfinvf(data_p[i]) * std + mean;
-	}
-
-}
-
-__global__ void price_bond(float* rn, int cnt, 
-	float bond_par, float bond_c, int bond_m, float* bond_y, 
-	float *prices) {
-	
-	// Naive implementation
-	// Each thread handle one outter, calculate the price and store it
-
-	size_t Idx = threadIdx.x + blockDim.x * blockIdx.x;
-	if (Idx >= cnt) return;
-	
-	float d = rn[Idx];
-	float price = 0.0f;
-	// Loop to sum the coupon price until the maturity
-	for (int i = 0; i < bond_m; i++) {
-		price += bond_c /
-			powf((float)(1.0f + (bond_y[i] + d) / 100.0f), i + 1);
-	}
-	// Add the face value
-	price += bond_par /
-		powf((float)(1.0f + (bond_y[bond_m - 1] + d) / 100.0f), bond_m);
-
-	// Store in prices matrix
-	prices[Idx] = price;
-}
-
-__global__ void price_stock(float* rn, int cnt,
-	float s0, float mean, float std, int x, int t,
-	float* prices) {
-
-	// Naive implementation
-	// Each thread handle one outter, calculate the price and store it
-
-	size_t Idx = threadIdx.x + blockDim.x * blockIdx.x;
-	if (Idx >= cnt) return;
-
-	// Store in prices matrix
-	prices[Idx] = x * s0 * exp((mean - 0.5f * std * std) * t
-			+ std * sqrtf(float(t)) * rn[Idx]);
-
-	
-}
 
 
 double NestedMonteCarloVaR::execute() {
@@ -458,8 +406,8 @@ double NestedMonteCarloVaR::execute() {
 //		for (int j = 0; j < bskop->n; j++) {
 //			s = &(bskop->stocks[j]);
 //			bskop_stock_price[j] = s->s0
-//				* exp((s->mu - 0.5f * s->var * s->var) * var_t
-//					+ s->var * sqrtf(float(var_t)) * bskop_ext_rn[i * bskop->n + j]);
+//				* exp((s->mean - 0.5f * s->std * s->std) * var_t
+//					+ s->std * sqrtf(float(var_t)) * bskop_ext_rn[i * bskop->n + j]);
 //		}
 //
 //		// Inner loop
@@ -471,8 +419,8 @@ double NestedMonteCarloVaR::execute() {
 //			for (int k = 0; k < path_int; k++) {
 //				int rn_offset = i * path_int * bskop->n + j * path_int + k;
 //				value_each[j * path_int + k] = s->x *
-//					bskop_stock_price[j] * exp((s->mu - 0.5f * s->var * s->var) * bskop_t
-//						+ s->var * sqrtf(float(bskop_t)) * bskop_rn[rn_offset]);
+//					bskop_stock_price[j] * exp((s->mean - 0.5f * s->std * s->std) * bskop_t
+//						+ s->std * sqrtf(float(bskop_t)) * bskop_rn[rn_offset]);
 //			}
 //		}
 //
@@ -526,8 +474,8 @@ double NestedMonteCarloVaR::execute() {
 //
 //		// reprice underlying stocks
 //		// will be used in inner as s0
-//		barop_stock_price = s->s0 * exp((s->mu - 0.5f * s->var * s->var) * var_t
-//			+ s->var * sqrtf(float(var_t)) * barop_ext_rn[i]);
+//		barop_stock_price = s->s0 * exp((s->mean - 0.5f * s->std * s->std) * var_t
+//			+ s->std * sqrtf(float(var_t)) * barop_ext_rn[i]);
 //		// For consistancy with gpu implementation (calculate every path in parallel)
 //		// So here we don't use early stop, just record the max
 //		barop_max_price = barop_stock_price;
@@ -538,8 +486,8 @@ double NestedMonteCarloVaR::execute() {
 //			// Loop over steps in one path, get max price
 //			for (int k = 0; k < barop_t; k++) {
 //				// Calculate price at this step
-//				barop_price = barop_stock_price * exp((s->mu - 0.5f * s->var * s->var) * k
-//					+ s->var * sqrtf(float(k)) * barop_rn[i * path_int * barop_t + j * barop_t + k]);
+//				barop_price = barop_stock_price * exp((s->mean - 0.5f * s->std * s->std) * k
+//					+ s->std * sqrtf(float(k)) * barop_rn[i * path_int * barop_t + j * barop_t + k]);
 //
 //				// Check maximum
 //				if (barop_price > barop_max_price) {
