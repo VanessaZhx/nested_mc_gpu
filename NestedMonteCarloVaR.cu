@@ -196,7 +196,7 @@ double NestedMonteCarloVaR::execute() {
 	rng->generate_sobol(bond_rn, 1, path_ext);
 	moro_inv << < grid_bond_rn, block >> > (bond_rn, path_ext, 0, bond->sigma);
 
-	cudaDeviceSynchronize();
+	//cudaDeviceSynchronize();
 
 	//dim3 grid_v2((path_ext - 1) / (block.x * DATA_BLOCK) + 1, 1);
 	//moro_inv_v2 << < grid_v2, block >> > (bond_rn, path_ext, 0, bond->sigma);
@@ -218,88 +218,121 @@ double NestedMonteCarloVaR::execute() {
 	*/
 	dim3 grid_stock_rn((path_ext - 1) / block.x + 1, 1);
 	CUDA_CALL(cudaMallocManaged((void**)&stock_rn, path_ext * sizeof(float)));
-	/*rng->generate_sobol(stock_rn, var_t, path_ext);
-	rng->convert_normal(stock_rn, var_t * path_ext);*/
 	rng->generate_sobol(stock_rn, 1, path_ext);
 	moro_inv << < grid_stock_rn, block >> > (stock_rn, path_ext, 0, 1);
 
 	cudaDeviceSynchronize();
 
-	cout << "Random Numbers:\n";
+	/*cout << "Random Numbers:\n";
 	for (int i = 0; i < path_ext; i++) {
 		cout << stock_rn[i] << " ";
+		cout << endl;
+	}*/
+
+
+
+	/* == Basket Option ==
+	** Need two set of random numbers
+	** First: to reprice underlying stocks at H(use as S0 in inner)
+	** [path_ext, n]
+	** Second: inner loop, to reprice option
+	** [path_ext, [path_int, n]] => [path_ext * path_int, n]
+	*/
+	int bsk_n = bskop->n;
+	// Random number sequence for basket option(outer loop)
+	float* bskop_ext_rn;
+	/*CUDA_CALL(cudaMalloc((void**)&bskop_ext_rn, path_ext * bsk_n * sizeof(float)));
+	rng->generate_sobol(bskop_ext_rn, bsk_n, path_ext);
+	rng->convert_normal(bskop_ext_rn, path_ext * bsk_n);*/
+
+	dim3 grid_bsk_rn((path_ext * bsk_n - 1) / block.x + 1, 1);
+	CUDA_CALL(cudaMallocManaged((void**)&bskop_ext_rn, path_ext * bsk_n * sizeof(float)));
+	rng->generate_sobol(bskop_ext_rn, bsk_n, path_ext);
+	moro_inv << < grid_bsk_rn, block >> > (bskop_ext_rn, path_ext * bsk_n, 0, 1);
+
+
+	// Random number sequence for basket option(inner loop)
+	float* bskop_tmp_rn;
+	CUDA_CALL(cudaMallocManaged((void**)&bskop_rn, path_ext * path_int * bsk_n * sizeof(float)));
+	CUDA_CALL(cudaMallocManaged((void**)&bskop_tmp_rn, path_ext * path_int * bsk_n * sizeof(float)));
+	
+	rng->generate_sobol(bskop_tmp_rn, bsk_n, path_ext * path_int);
+	moro_inv << < grid_bsk_rn, block >> > (bskop_tmp_rn, path_ext * path_int * bsk_n, 0, 1);
+
+	cudaDeviceSynchronize();
+
+	cout << "Random Numbers:\n";
+	for (int i = 0; i < path_ext * path_int; i++) {
+		for (int j = 0; j < bsk_n; j++) {
+			cout << bskop_tmp_rn[i * bsk_n + j] << " ";
+		}
 		cout << endl;
 	}
 
 
-//
-//	/* == Basket Option ==
-//	** Need two set of random numbers
-//	** First: to reprice underlying stocks at H(use as S0 in inner)
-//	** [path_ext, n]
-//	** Second: inner loop, to reprice option
-//	** [path_ext, [path_int, n]] => [path_ext * path_int, n]
-//	*/
-//	int bsk_n = bskop->n;
-//	// Random number sequence for basket option(outer loop)
-//	float* bskop_ext_rn;
-//	CUDA_CALL(cudaMalloc((void**)&bskop_ext_rn, path_ext * bsk_n * sizeof(float)));
-//	rng->generate_sobol(bskop_ext_rn, bsk_n, path_ext);
-//	rng->convert_normal(bskop_ext_rn, path_ext * bsk_n);
-//
-//	// Random number sequence for basket option(inner loop)
-//	//bskop_rn = (float*)malloc((size_t)path_ext * path_int * bsk_n * sizeof(float));
-//	CUDA_CALL(cudaMalloc((void**)&bskop_rn, path_ext * path_ext * bsk_n * sizeof(float)));
-//	//float* bskop_tmp_rn = (float*)malloc((size_t)path_ext * path_int * bsk_n * sizeof(float));
-//	float* bskop_tmp_rn;
-//	CUDA_CALL(cudaMalloc((void**)&bskop_tmp_rn, path_ext * path_ext * bsk_n * sizeof(float)));
-//	rng->generate_sobol(bskop_tmp_rn, bsk_n, path_ext * path_int);
-//	rng->convert_normal(bskop_tmp_rn, path_ext * path_int * bsk_n);
-//
-//	// Covariance transformation
-//	// A[n * n]*rn[n * (path_ext * path_int)]
-//	cublasHandle_t handle;
-//	CUBLAS_CALL(cublasCreate(&handle));
-//	/*		
-////(m*n) =((n*n)*(n*m))^T
-//	CUBLAS_CALL(cublasSgemm(handle,		//handle to the cuBLAS library context.
-//		CUBLAS_OP_T,					//operation op(A) that is non- or (conj.) transpose.
-//		CUBLAS_OP_T,					//operation op(B) that is non- or (conj.) transpose.
-//		N,								//number of rows of matrix op(A) and C.
-//		M,								//number of columns of matrix op(B) and C.
-//		N,								//number of columns of op(A) and rows of op(B).
-//		&one,							//<type> scalar used for multiplication.
-//		Q_dev,							//<type> array of dimensions lda x k with lda>=max(1,m) if transa == CUBLAS_OP_N and lda x m with lda>=max(1,k) otherwise
-//		N,								//leading dimension of two-dimensional array used to store the matrix A.
-//		x_dev,							//<type> array of dimension ldb x n with ldb>=max(1,k) if transb == CUBLAS_OP_N and ldb x k with ldb>=max(1,n) otherwise.
-//		M,								//leading dimension of two-dimensional array used to store matrix B.
-//		&zero,							//<type> scalar used for multiplication. If beta==0, C does not have to be a valid input.
-//		Y_dev,							//<type> array of dimensions ldc x n with ldc>=max(1,m).
-//		N));							//	leading dimension of a two - dimensional array used to store the matrix C.
-//
-//	cublasSgemm(
-//		handle,
-//
-//		)
-//
-//	cblas_sgemm(CblasRowMajor,
-//		CblasNoTrans,
-//		CblasTrans,
-//		bsk_n,								// result row
-//		path_ext * path_int,				// result col
-//		bsk_n,								// length of "multiple by"
-//		1,									// alpha
-//		bskop->A,							// A
-//		bsk_n,								// col of A
-//		bskop_tmp_rn,						// B
-//		bsk_n,								// col of B
-//		0,									// beta
-//		bskop_rn,							// C
-//		path_ext * path_int					// col of C
-//	);
-	//
-//	free(bskop_tmp_rn);
-//
+	// Covariance transformation
+	// A[n * n]*rn[n * (path_ext * path_int)]
+	float one = 1.0f;
+	float zero = 0.0f;
+	cublasHandle_t handle;
+	CUBLAS_CALL(cublasCreate(&handle));
+	//cblas_sgemm(CblasRowMajor,
+	//	CblasNoTrans,
+	//	CblasTrans,
+	//	bsk_n,								// result row
+	//	path_ext * path_int,				// result col
+	//	bsk_n,								// length of "multiple by"
+	//	1,									// alpha
+	//	bskop->A,							// A
+	//	bsk_n,								// col of A
+	//	bskop_tmp_rn,						// B
+	//	bsk_n,								// col of B
+	//	0,									// beta
+	//	bskop_rn,							// C
+	//	path_ext * path_int					// col of C
+	//);
+
+	float* A = NULL;
+	CUDA_CALL(cudaMallocManaged((void**)&A, bsk_n * bsk_n * sizeof(float)));
+	for (int i = 0; i < bsk_n * bsk_n; i++) {
+		A[i] = bskop->A[i];
+	}
+	
+	// A B = (BT AT)T
+	// A(m,k), B(k, n)
+	//cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, n, m, k, &alpha, *B, n, *A, k, &beta, *C, n);
+	CUBLAS_CALL(cublasSgemm(handle,		// handle to the cuBLAS library context.
+		CUBLAS_OP_T,					// operation op(A) that is non- or (conj.) transpose.
+		CUBLAS_OP_N,					// operation op(B) that is non- or (conj.) transpose.
+		path_ext * path_int,			// row of C
+		bsk_n,							// col of C
+		bsk_n,							// multi by
+		&one,							// alpha
+		bskop_tmp_rn,					// A
+		bsk_n,							// A row
+		A,								// B
+		bsk_n,							// B row
+		&zero,							// beta
+		bskop_rn,						// C
+		path_ext * path_int				// C row
+	));
+
+	cudaDeviceSynchronize();
+
+	CUDA_CALL(cudaFree(bskop_tmp_rn));
+	CUDA_CALL(cudaFree(A));
+
+	cout << "Random Numbers:\n";
+	for (int i = 0; i < bsk_n; i++) {
+		for (int j = 0; j < path_ext * path_int; j++) {
+			cout << bskop_rn[i * path_ext * path_int + j] << " ";
+		}
+		cout << endl;
+	}
+	
+	
+	
+
 //	/* == Barrier Option ==
 //	** Need two set of random numbers
 //	** First: to reprice underlying stocks at H(use as S0 in inner)
@@ -366,10 +399,6 @@ double NestedMonteCarloVaR::execute() {
 	row_idx++;
 
 
-
-
-
-
 	/* ====================
 	** ==     Stock      ==
 	** ==================== */
@@ -391,75 +420,75 @@ double NestedMonteCarloVaR::execute() {
 
 
 
-//	/* ====================
-//	** == Basket Option ==
-//	** ==================== */
-//	// TODO: don't add x when comparing S and K
-//	float* bskop_stock_price = (float*)malloc((size_t)bsk_n * sizeof(float));
-//	float* value_each = (float*)malloc((size_t)path_int * bskop->n * sizeof(float));
-//	float* value_weighted = (float*)malloc((size_t)path_int * sizeof(float));
-//	Stock* s;
-//
-//	for (int i = 0; i < path_ext; i++) {
-//		// reprice underlying stocks
-//		// will be used in inner as s0
-//		for (int j = 0; j < bskop->n; j++) {
-//			s = &(bskop->stocks[j]);
-//			bskop_stock_price[j] = s->s0
-//				* exp((s->mean - 0.5f * s->std * s->std) * var_t
-//					+ s->std * sqrtf(float(var_t)) * bskop_ext_rn[i * bskop->n + j]);
-//		}
-//
-//		// Inner loop
-//		// The random number has already been transformed with cov
-//		// Calculate each value with the correlated-random numbers
-//		// random numbers[n][path_int]
-//		for (int j = 0; j < bskop->n; j++) {
-//			s = &(bskop->stocks[j]);
-//			for (int k = 0; k < path_int; k++) {
-//				int rn_offset = i * path_int * bskop->n + j * path_int + k;
-//				value_each[j * path_int + k] = s->x *
-//					bskop_stock_price[j] * exp((s->mean - 0.5f * s->std * s->std) * bskop_t
-//						+ s->std * sqrtf(float(bskop_t)) * bskop_rn[rn_offset]);
-//			}
-//		}
-//
-//		// Multiply with weight
-//		// Value_each[n][path_int]
-//		// value_each[inter * n] * weight[n * 1]
-//		cblas_sgemv(CblasRowMajor,		// Specifies row-major
-//			CblasTrans,					// Specifies whether to transpose matrix A.
-//			bskop->n,					// A rows
-//			path_int,					// A col
-//			1,							// alpha	
-//			value_each,					// A
-//			path_int,					// The size of the first dimension of matrix A.
-//			bskop->w,					// Vector X.
-//			1,							// Stride within X. 
-//			0,							// beta
-//			value_weighted,				// Vector Y
-//			1							// Stride within Y
-//		);
-//
-//		// Determine the price with stirke
-//		// If the price is less than k, don't execute
-//		float call = 0.0f;
-//		for (int i = 0; i < path_int; i++) {
-//			call += (value_weighted[i] > bskop->k) ? (value_weighted[i] - bskop->k) : 0;
-//		}
-//
-//		// Store to the next row of price matrix
-//		prices[row_idx * path_ext + i] = call / path_int;
-//	}
-//
-//	free(bskop_ext_rn);
-//	free(value_each);
-//	free(value_weighted);
-//	free(bskop_stock_price);
-//	row_idx++;
-//
-//
-//
+	/* ====================
+	** == Basket Option ==
+	** ==================== */
+	// TODO: don't add x when comparing S and K
+	float* bskop_stock_price = (float*)malloc((size_t)bsk_n * sizeof(float));
+	float* value_each = (float*)malloc((size_t)path_int * bskop->n * sizeof(float));
+	float* value_weighted = (float*)malloc((size_t)path_int * sizeof(float));
+	Stock* s;
+
+	for (int i = 0; i < path_ext; i++) {
+		// reprice underlying stocks
+		// will be used in inner as s0
+		for (int j = 0; j < bskop->n; j++) {
+			s = &(bskop->stocks[j]);
+			bskop_stock_price[j] = s->s0
+				* exp((s->mean - 0.5f * s->std * s->std) * var_t
+					+ s->std * sqrtf(float(var_t)) * bskop_ext_rn[i * bskop->n + j]);
+		}
+
+		// Inner loop
+		// The random number has already been transformed with cov
+		// Calculate each value with the correlated-random numbers
+		// random numbers[n][path_int]
+		for (int j = 0; j < bskop->n; j++) {
+			s = &(bskop->stocks[j]);
+			for (int k = 0; k < path_int; k++) {
+				int rn_offset = i * path_int * bskop->n + j * path_int + k;
+				value_each[j * path_int + k] = s->x *
+					bskop_stock_price[j] * exp((s->mean - 0.5f * s->std * s->std) * bskop_t
+						+ s->std * sqrtf(float(bskop_t)) * bskop_rn[rn_offset]);
+			}
+		}
+
+		// Multiply with weight
+		// Value_each[n][path_int]
+		// value_each[inter * n] * weight[n * 1]
+		cblas_sgemv(CblasRowMajor,		// Specifies row-major
+			CblasTrans,					// Specifies whether to transpose matrix A.
+			bskop->n,					// A rows
+			path_int,					// A col
+			1,							// alpha	
+			value_each,					// A
+			path_int,					// The size of the first dimension of matrix A.
+			bskop->w,					// Vector X.
+			1,							// Stride within X. 
+			0,							// beta
+			value_weighted,				// Vector Y
+			1							// Stride within Y
+		);
+
+		// Determine the price with stirke
+		// If the price is less than k, don't execute
+		float call = 0.0f;
+		for (int i = 0; i < path_int; i++) {
+			call += (value_weighted[i] > bskop->k) ? (value_weighted[i] - bskop->k) : 0;
+		}
+
+		// Store to the next row of price matrix
+		prices[row_idx * path_ext + i] = call / path_int;
+	}
+
+	CUDA_CALL(cudaFree(bskop_ext_rn));
+	free(value_each);
+	free(value_weighted);
+	free(bskop_stock_price);
+	row_idx++;
+
+
+
 //	/* ====================
 //	** == Barrier Option ==
 //	** ==================== */
@@ -542,8 +571,8 @@ double NestedMonteCarloVaR::execute() {
 	//						Loss
 	// ====================================================
 	// Fill loss with negtive today's price of the portfolio
-	cublasHandle_t handle;
-	CUBLAS_CALL(cublasCreate(&handle));
+	//cublasHandle_t handle;
+	//CUBLAS_CALL(cublasCreate(&handle));
 	
 	float* loss = NULL, *w = NULL;
 	CUDA_CALL(cudaMallocManaged((void**)&loss, path_ext * sizeof(float)));
@@ -561,7 +590,7 @@ double NestedMonteCarloVaR::execute() {
 	// Loss = p0 - e^-rT * (price*w) = loss + (- e^-rT) *(price*w)
 	// haven't get ln here, but doesn't affect sorting
 	float discount = -exp(-1.0f * risk_free * var_t);
-	float one = 1.0f;
+	
 	//float zero = 0.0f;
 	CUBLAS_CALL(cublasSgemv(handle,
 		CUBLAS_OP_T,	// Use storage by row
@@ -645,6 +674,7 @@ double NestedMonteCarloVaR::execute() {
 	CUDA_CALL(cudaFree(prices));
 	CUDA_CALL(cudaFree(loss));
 	CUDA_CALL(cudaFree(stock_rn));
+	CUDA_CALL(cudaFree(bskop_ext_rn));
 
 	chrono::steady_clock::time_point end = chrono::steady_clock::now();
 	chrono::duration<double, std::milli> elapsed = end - start;
