@@ -10,10 +10,8 @@ int main()
 	const int var_t = 1;					// VaR duration
 	const float var_per = 0.95f;				// 1-percentile
 
-	const int port_n = 3;
-	float port_w[port_n] = { 0.0f, 1.0f, 1.0f };
-
-	//const int port_n = 4;					// Number of products in the portfolio
+	const int port_n = 4;					// Number of products in the portfolio
+	float port_w[port_n] = { 0.0f, 0.0f, 0.0f, 1.0f };		// Weights of the products in the portfolio
 	//float port_w[port_n] = { 0.3f, 0.3f, 0.1f, 0.3f };		// Weights of the products in the portfolio
 														// { bond, stock, basket option, barrier option}
 	const float risk_free = 0.02f;
@@ -55,7 +53,7 @@ int main()
 	mc->bond_init(bond_par, bond_c, bond_m, bond_y, sigma, 0);
 	mc->stock_init(stock_s0, stock_mu, stock_var, stock_x, 1);
 	mc->bskop_init(bskop_n, bskop_stocks, bskop_cov, bskop_k, bskop_w, bskop_t, 2);
-	//mc->barop_int(s1, barop_k, barop_h, barop_t, 3);
+	mc->barop_int(s1, barop_k, barop_h, barop_t, 3);
 
 	double exe_time = 0.0;
 	for (int i = 0; i < exp_times; i++) {

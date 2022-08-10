@@ -8,7 +8,7 @@
 #include "Bond.h"
 #include "Stock.h"
 #include "BasketOption.h"
-//#include "BarrierOption.h"
+#include "BarrierOption.h"
 
 #include "CUDAPricing.cuh"
 
@@ -37,7 +37,7 @@ public:
 	void bskop_init(int bskop_n, Stock* bskop_stocks, float* bskop_cov,
 		float bskop_k, float* bskop_w, int bskop_t, int idx);
 
-	/*void barop_int(Stock* barop_stock, float barop_k, float barop_h, int barop_t, int idx);*/
+	void barop_int(Stock* barop_stock, float barop_k, float barop_h, int barop_t, int idx);
 
 	double execute();
 
@@ -66,9 +66,9 @@ private:
 	int bskop_t = 0;					// Maturity of option
 	float* bskop_rn = NULL;		// Pointer to the basket option's RN sequence
 
-	//BarrierOption* barop = NULL;
-	//int barop_t = 0;			// Maturity of option
-	//float* barop_rn = NULL;		// Pointer to barrier option's RN sequence
+	BarrierOption* barop = NULL;
+	int barop_t = 0;			// Maturity of option
+	float* barop_rn = NULL;		// Pointer to barrier option's RN sequence
 
 
 	float* prices = NULL; // Pointer to the matrix of each of the product's prices

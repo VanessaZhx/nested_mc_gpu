@@ -127,50 +127,58 @@ void NestedMonteCarloVaR::bskop_init(int bskop_n, Stock* bskop_stocks,
 }
 
 
-//void NestedMonteCarloVaR::barop_int(Stock* barop_stock, float barop_k,
-//	float barop_h, int barop_t, int idx) {
-//	// Product initiation
-//	barop = new BarrierOption(barop_stock, barop_k, barop_h);
-//
-//	this->barop_t = barop_t;
-//
-//	// Simulate start price
-//	// Need one round of inner loop to price start value
-//	float* temp_rn = (float*)malloc((size_t)path_int * barop_t * sizeof(float));
-//	rng->generate_sobol(temp_rn, barop_t, path_int);
-//	rng->convert_normal(temp_rn, path_int * barop_t);
-//
-//	Stock* s = barop_stock;
-//	float barop_max_price = 0.0f;		// Max price throughout the path
-//	float barop_price = 0.0f;			// option price at one step
-//	float call = 0.0f;					// Accumulated price for a inner path
-//
-//	for (int j = 0; j < path_int; j++) {
-//		// Loop over steps in one path, get max price
-//		for (int k = 0; k < barop_t; k++) {
-//			// Calculate price at this step
-//			barop_price = s->s0 * exp((s->mean - 0.5f * s->std * s->std) * k
-//				+ s->std * sqrtf(float(k)) * temp_rn[j * barop_t + k]);
-//
-//			// Check maximum
-//			if (barop_price > barop_max_price) {
-//				barop_max_price = barop_price;
-//			}
-//		}
-//
-//		// Compare with barrier, the option exists if max price is larger than barrier
-//		if (barop_max_price > barop->h) {
-//			// barop_price will be the last price
-//			// max{St-K, 0}
-//			call += (barop_price > barop->k) ? barop_price - barop->k : 0;
-//		}
-//	}
-//	free(temp_rn);
-//
-//
-//	// Add start price to the portfolio start price
-//	this->port_p0 += s->x * (call / path_int) * port_w[idx];
-//}
+void NestedMonteCarloVaR::barop_int(Stock* barop_stock, float barop_k,
+	float barop_h, int barop_t, int idx) {
+	// Product initiation
+	barop = new BarrierOption(barop_stock, barop_k, barop_h);
+
+	this->barop_t = barop_t;
+
+	// Simulate start price
+	// Need one round of inner loop to price start value
+	//float* temp_rn = (float*)malloc((size_t)path_int * barop_t * sizeof(float));
+	float* temp_rn;
+	cudaError x = cudaMallocManaged((void**)&temp_rn, path_int * barop_t * sizeof(float));
+	if (x != cudaSuccess) {
+		std::cout << "\nError at " << __FILE__ << ":"
+			<< __LINE__ << ": " << cudaGetErrorString(x) << "\n";
+		return;
+	}
+	rng->generate_sobol_normal(temp_rn, barop_t, path_int);
+	cudaDeviceSynchronize();
+	
+
+	Stock* s = barop_stock;
+	float barop_max_price = 0.0f;		// Max price throughout the path
+	float barop_price = 0.0f;			// option price at one step
+	float call = 0.0f;					// Accumulated price for a inner path
+
+	for (int j = 0; j < path_int; j++) {
+		// Loop over steps in one path, get max price
+		for (int k = 0; k < barop_t; k++) {
+			// Calculate price at this step
+			barop_price = s->s0 * exp((s->mean - 0.5f * s->std * s->std) * k
+				+ s->std * sqrtf(float(k)) * temp_rn[j * barop_t + k]);
+
+			// Check maximum
+			if (barop_price > barop_max_price) {
+				barop_max_price = barop_price;
+			}
+		}
+
+		// Compare with barrier, the option exists if max price is larger than barrier
+		if (barop_max_price > barop->h) {
+			// barop_price will be the last price
+			// max{St-K, 0}
+			call += (barop_price > barop->k) ? barop_price - barop->k : 0;
+		}
+	}
+	cudaFree(temp_rn);
+
+
+	// Add start price to the portfolio start price
+	this->port_p0 += s->x * (call / path_int) * port_w[idx];
+}
 
 
 
@@ -239,7 +247,7 @@ double NestedMonteCarloVaR::execute() {
 	** [path_ext, [path_int, n]] => [path_ext * path_int, n]
 	*/
 	int bsk_n = bskop->n;
-	dim3 grid_bsk_rn((path_ext * bsk_n - 1) / block.x + 1, 1);
+	dim3 grid_bsk_rn((path_ext * (path_int + 1) * bsk_n - 1) / block.x + 1, 1);
 
 	// Random number sequence for basket option(inner loop)
 	float* bskop_tmp_rn;
@@ -251,13 +259,13 @@ double NestedMonteCarloVaR::execute() {
 
 	cudaDeviceSynchronize();
 
-	cout << "Random Numbers:\n";
-	for (int i = 0; i < path_ext * (path_int + 1); i++) {
-		for (int j = 0; j < bsk_n; j++) {
-			cout << bskop_tmp_rn[i * bsk_n + j] << " ";
-		}
-		cout << endl;
-	}
+	//cout << "Random Numbers:\n";
+	//for (int i = 0; i < path_ext * (path_int + 1); i++) {
+	//	for (int j = 0; j < bsk_n; j++) {
+	//		cout << bskop_tmp_rn[i * bsk_n + j] << " ";
+	//	}
+	//	cout << endl;
+	//}
 
 
 	// Covariance transformation
@@ -308,7 +316,7 @@ double NestedMonteCarloVaR::execute() {
 		bsk_n							// C row
 	));
 
-	cudaDeviceSynchronize();
+	//cudaDeviceSynchronize();
 
 	CUDA_CALL(cudaFree(bskop_tmp_rn));
 	CUDA_CALL(cudaFree(A));
@@ -321,43 +329,48 @@ double NestedMonteCarloVaR::execute() {
 		cout << endl;
 	}*/
 
-	cout << "Random Numbers:\n";
-	for (int i = 0; i < path_ext * (path_int + 1); i++) {
-		for (int j = 0; j < bsk_n; j++) {
-			cout << bskop_rn[i * bsk_n + j] << " ";
-		}
-		cout << endl;
-	}
-	
+	//cout << "Random Numbers:\n";
+	//for (int i = 0; i < path_ext * (path_int + 1); i++) {
+	//	for (int j = 0; j < bsk_n; j++) {
+	//		cout << bskop_rn[i * bsk_n + j] << " ";
+	//	}
+	//	cout << endl;
+	//}
+	//
 	
 	
 
-//	/* == Barrier Option ==
-//	** Need two set of random numbers
-//	** First: to reprice underlying stocks at H(use as S0 in inner)
-//	** [path_ext, var_t]
-//	** Second: inner loop, to reprice option
-//	** [path_ext, [path_int, steps]] => [path_ext * path_int, steps]
-//	*/
-//	// Random number sequence for barrier option(outer loop)
-//	float* barop_ext_rn = (float*)malloc((size_t)path_ext * var_t * sizeof(float));
-//	rng->generate_sobol(barop_ext_rn, var_t, path_ext);
-//	rng->convert_normal(barop_ext_rn, path_ext * var_t);
-//
-//	// Random number sequence for barrier option(inner loop)
-//	barop_rn = (float*)malloc((size_t)path_ext * path_int * barop_t * sizeof(float));
-//	rng->generate_sobol(barop_rn, barop_t, path_ext * path_int);
-//	rng->convert_normal(barop_rn, path_ext * path_int * barop_t);
-//
-//	/*cout << "Random Numbers:\n";
-//	for (int i = 0; i < path_ext * path_int; i++) {
-//		for (int j = 0; j < barop_t; j++) {
-//			cout << barop_rn[i * barop_t + j] << " ";
-//		}
-//		cout << endl;
-//	}*/
-//
-//
+	/* == Barrier Option ==
+	** Need two set of random numbers
+	** First: to reprice underlying stocks at H(use as S0 in inner)
+	** [path_ext, var_t]
+	** Second: inner loop, to reprice option
+	** [path_ext, [path_int, steps]] => [path_ext * path_int, steps]
+	*/
+	// Random number sequence for barrier option(outer loop)
+	dim3 grid_barop_rn_ext((path_ext * var_t - 1) / block.x + 1, 1);
+	float* barop_ext_rn;
+	CUDA_CALL(cudaMallocManaged((void**)&barop_ext_rn, path_ext * var_t * sizeof(float)));
+	rng->generate_sobol(barop_ext_rn, var_t, path_ext);
+	moro_inv << < grid_barop_rn_ext, block >> > (barop_ext_rn, path_ext * var_t, 0, 1);
+
+	// Random number sequence for barrier option(inner loop)
+	dim3 grid_barop_rn_int((path_ext * path_int * barop_t - 1) / block.x + 1, 1);
+	CUDA_CALL(cudaMallocManaged((void**)&barop_rn, path_ext * path_int * barop_t * sizeof(float)));
+	rng->generate_sobol(barop_rn, barop_t, path_ext * path_int);
+	moro_inv << < grid_barop_rn_int, block >> > (barop_rn, path_ext * path_int * barop_t, 0, 1);
+	
+	cudaDeviceSynchronize();
+
+	cout << "Random Numbers:\n";
+	for (int i = 0; i < path_ext * path_int; i++) {
+		for (int j = 0; j < barop_t; j++) {
+			cout << barop_rn[i * barop_t + j] << " ";
+		}
+		cout << endl;
+	}
+
+
 
 	// ====================================================
 	//            Outter Monte Carlo Simulation
@@ -425,9 +438,6 @@ double NestedMonteCarloVaR::execute() {
 	/* ====================
 	** == Basket Option ==
 	** ==================== */
-	// TODO: don't add x when comparing S and K
-	
-
 	dim3 grid_bskop((path_ext - 1) / block.x + 1, 1);
 	
 	float* list = NULL;
@@ -543,56 +553,57 @@ double NestedMonteCarloVaR::execute() {
 
 
 
-//	/* ====================
-//	** == Barrier Option ==
-//	** ==================== */
-//	// Up-in-call
-//	float barop_stock_price = 0.0f;		// Stock price at var_t
-//	float barop_max_price = 0.0f;		// Max price throughout the path
-//	float barop_price = 0.0f;			// option price at one step
-//	float call = 0.0f;					// Accumulated price for a inner path
-//
-//	for (int i = 0; i < path_ext; i++) {
-//		s = barop->s;
-//
-//		// reprice underlying stocks
-//		// will be used in inner as s0
-//		barop_stock_price = s->s0 * exp((s->mean - 0.5f * s->std * s->std) * var_t
-//			+ s->std * sqrtf(float(var_t)) * barop_ext_rn[i]);
-//		// For consistancy with gpu implementation (calculate every path in parallel)
-//		// So here we don't use early stop, just record the max
-//		barop_max_price = barop_stock_price;
-//
-//		// Inner loop
-//		call = 0.0f;
-//		for (int j = 0; j < path_int; j++) {
-//			// Loop over steps in one path, get max price
-//			for (int k = 0; k < barop_t; k++) {
-//				// Calculate price at this step
-//				barop_price = barop_stock_price * exp((s->mean - 0.5f * s->std * s->std) * k
-//					+ s->std * sqrtf(float(k)) * barop_rn[i * path_int * barop_t + j * barop_t + k]);
-//
-//				// Check maximum
-//				if (barop_price > barop_max_price) {
-//					barop_max_price = barop_price;
-//				}
-//			}
-//			//cout << endl<< barop_price << endl;
-//
-//			// Compare with barrier, the option exists if max price is larger than barrier
-//			if (barop_max_price > barop->h) {
-//				// barop_price will be the last price
-//				// max{St-K, 0}
-//				call += (barop_price > barop->k) ? barop_price - barop->k : 0;
-//			}
-//		}
-//		//cout << call << endl;
-//
-//		// Get expected price at var_t
-//		prices[row_idx * path_ext + i] = s->x * (call / path_int);
-//	}
-//	free(barop_ext_rn);
-//
+	/* ====================
+	** == Barrier Option ==
+	** ==================== */
+	// Up-in-call
+	float barop_stock_price = 0.0f;		// Stock price at var_t
+	float barop_max_price = 0.0f;		// Max price throughout the path
+	float barop_price = 0.0f;			// option price at one step
+	float call = 0.0f;					// Accumulated price for a inner path
+
+	Stock* s = NULL;
+	for (int i = 0; i < path_ext; i++) {
+		s = barop->s;
+
+		// reprice underlying stocks
+		// will be used in inner as s0
+		barop_stock_price = s->s0 * exp((s->mean - 0.5f * s->std * s->std) * var_t
+			+ s->std * sqrtf(float(var_t)) * barop_ext_rn[i]);
+		// For consistancy with gpu implementation (calculate every path in parallel)
+		// So here we don't use early stop, just record the max
+		barop_max_price = barop_stock_price;
+
+		// Inner loop
+		call = 0.0f;
+		for (int j = 0; j < path_int; j++) {
+			// Loop over steps in one path, get max price
+			for (int k = 0; k < barop_t; k++) {
+				// Calculate price at this step
+				barop_price = barop_stock_price * exp((s->mean - 0.5f * s->std * s->std) * k
+					+ s->std * sqrtf(float(k)) * barop_rn[i * path_int * barop_t + j * barop_t + k]);
+
+				// Check maximum
+				if (barop_price > barop_max_price) {
+					barop_max_price = barop_price;
+				}
+			}
+			//cout << endl<< barop_price << endl;
+
+			// Compare with barrier, the option exists if max price is larger than barrier
+			if (barop_max_price > barop->h) {
+				// barop_price will be the last price
+				// max{St-K, 0}
+				call += (barop_price > barop->k) ? barop_price - barop->k : 0;
+			}
+		}
+		//cout << call << endl;
+
+		// Get expected price at var_t
+		prices[row_idx * path_ext + i] = s->x * (call / path_int);
+	}
+	//free(barop_ext_rn);
+
 
 	// Reset
 	row_idx = 0;
