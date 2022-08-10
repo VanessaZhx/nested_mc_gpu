@@ -239,30 +239,20 @@ double NestedMonteCarloVaR::execute() {
 	** [path_ext, [path_int, n]] => [path_ext * path_int, n]
 	*/
 	int bsk_n = bskop->n;
-	// Random number sequence for basket option(outer loop)
-	float* bskop_ext_rn;
-	/*CUDA_CALL(cudaMalloc((void**)&bskop_ext_rn, path_ext * bsk_n * sizeof(float)));
-	rng->generate_sobol(bskop_ext_rn, bsk_n, path_ext);
-	rng->convert_normal(bskop_ext_rn, path_ext * bsk_n);*/
-
 	dim3 grid_bsk_rn((path_ext * bsk_n - 1) / block.x + 1, 1);
-	CUDA_CALL(cudaMallocManaged((void**)&bskop_ext_rn, path_ext * bsk_n * sizeof(float)));
-	rng->generate_sobol(bskop_ext_rn, bsk_n, path_ext);
-	moro_inv << < grid_bsk_rn, block >> > (bskop_ext_rn, path_ext * bsk_n, 0, 1);
-
 
 	// Random number sequence for basket option(inner loop)
 	float* bskop_tmp_rn;
-	CUDA_CALL(cudaMallocManaged((void**)&bskop_rn, path_ext * path_int * bsk_n * sizeof(float)));
-	CUDA_CALL(cudaMallocManaged((void**)&bskop_tmp_rn, path_ext * path_int * bsk_n * sizeof(float)));
+	CUDA_CALL(cudaMallocManaged((void**)&bskop_rn, path_ext * (path_int + 1) * bsk_n * sizeof(float)));
+	CUDA_CALL(cudaMallocManaged((void**)&bskop_tmp_rn, path_ext * (path_int + 1) * bsk_n * sizeof(float)));
 	
-	rng->generate_sobol(bskop_tmp_rn, bsk_n, path_ext * path_int);
-	moro_inv << < grid_bsk_rn, block >> > (bskop_tmp_rn, path_ext * path_int * bsk_n, 0, 1);
+	rng->generate_sobol(bskop_tmp_rn, bsk_n, path_ext * (path_int + 1));
+	moro_inv << < grid_bsk_rn, block >> > (bskop_tmp_rn, path_ext * (path_int + 1) * bsk_n, 0, 1);
 
 	cudaDeviceSynchronize();
 
 	cout << "Random Numbers:\n";
-	for (int i = 0; i < path_ext * path_int; i++) {
+	for (int i = 0; i < path_ext * (path_int + 1); i++) {
 		for (int j = 0; j < bsk_n; j++) {
 			cout << bskop_tmp_rn[i * bsk_n + j] << " ";
 		}
@@ -298,23 +288,24 @@ double NestedMonteCarloVaR::execute() {
 		A[i] = bskop->A[i];
 	}
 	
+	
 	// A B = (BT AT)T
 	// A(m,k), B(k, n)
 	//cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, n, m, k, &alpha, *B, n, *A, k, &beta, *C, n);
 	CUBLAS_CALL(cublasSgemm(handle,		// handle to the cuBLAS library context.
-		CUBLAS_OP_T,					// operation op(A) that is non- or (conj.) transpose.
+		CUBLAS_OP_N,					// operation op(A) that is non- or (conj.) transpose.
 		CUBLAS_OP_N,					// operation op(B) that is non- or (conj.) transpose.
-		path_ext * path_int,			// row of C
-		bsk_n,							// col of C
+		bsk_n, 							// row of C
+		path_ext * (path_int + 1),		// col of C
 		bsk_n,							// multi by
 		&one,							// alpha
-		bskop_tmp_rn,					// A
+		A,								// A
 		bsk_n,							// A row
-		A,								// B
+		bskop_tmp_rn,					// B
 		bsk_n,							// B row
 		&zero,							// beta
 		bskop_rn,						// C
-		path_ext * path_int				// C row
+		bsk_n							// C row
 	));
 
 	cudaDeviceSynchronize();
@@ -322,10 +313,18 @@ double NestedMonteCarloVaR::execute() {
 	CUDA_CALL(cudaFree(bskop_tmp_rn));
 	CUDA_CALL(cudaFree(A));
 
-	cout << "Random Numbers:\n";
+	/*cout << "Random Numbers:\n";
 	for (int i = 0; i < bsk_n; i++) {
-		for (int j = 0; j < path_ext * path_int; j++) {
-			cout << bskop_rn[i * path_ext * path_int + j] << " ";
+		for (int j = 0; j < path_ext * (path_int + 1); j++) {
+			cout << bskop_rn[i * path_ext * (path_int + 1) + j] << " ";
+		}
+		cout << endl;
+	}*/
+
+	cout << "Random Numbers:\n";
+	for (int i = 0; i < path_ext * (path_int + 1); i++) {
+		for (int j = 0; j < bsk_n; j++) {
+			cout << bskop_rn[i * bsk_n + j] << " ";
 		}
 		cout << endl;
 	}
@@ -395,6 +394,7 @@ double NestedMonteCarloVaR::execute() {
 	cudaDeviceSynchronize();
 
 	CUDA_CALL(cudaFree(bond_y));
+	CUDA_CALL(cudaFree(bond_rn));
 
 	row_idx++;
 
@@ -415,6 +415,8 @@ double NestedMonteCarloVaR::execute() {
 
 	cudaDeviceSynchronize();
 
+	CUDA_CALL(cudaFree(stock_rn));
+
 	row_idx++;
 
 
@@ -424,67 +426,119 @@ double NestedMonteCarloVaR::execute() {
 	** == Basket Option ==
 	** ==================== */
 	// TODO: don't add x when comparing S and K
-	float* bskop_stock_price = (float*)malloc((size_t)bsk_n * sizeof(float));
-	float* value_each = (float*)malloc((size_t)path_int * bskop->n * sizeof(float));
-	float* value_weighted = (float*)malloc((size_t)path_int * sizeof(float));
-	Stock* s;
+	
 
-	for (int i = 0; i < path_ext; i++) {
-		// reprice underlying stocks
-		// will be used in inner as s0
-		for (int j = 0; j < bskop->n; j++) {
-			s = &(bskop->stocks[j]);
-			bskop_stock_price[j] = s->s0
-				* exp((s->mean - 0.5f * s->std * s->std) * var_t
-					+ s->std * sqrtf(float(var_t)) * bskop_ext_rn[i * bskop->n + j]);
-		}
-
-		// Inner loop
-		// The random number has already been transformed with cov
-		// Calculate each value with the correlated-random numbers
-		// random numbers[n][path_int]
-		for (int j = 0; j < bskop->n; j++) {
-			s = &(bskop->stocks[j]);
-			for (int k = 0; k < path_int; k++) {
-				int rn_offset = i * path_int * bskop->n + j * path_int + k;
-				value_each[j * path_int + k] = s->x *
-					bskop_stock_price[j] * exp((s->mean - 0.5f * s->std * s->std) * bskop_t
-						+ s->std * sqrtf(float(bskop_t)) * bskop_rn[rn_offset]);
-			}
-		}
-
-		// Multiply with weight
-		// Value_each[n][path_int]
-		// value_each[inter * n] * weight[n * 1]
-		cblas_sgemv(CblasRowMajor,		// Specifies row-major
-			CblasTrans,					// Specifies whether to transpose matrix A.
-			bskop->n,					// A rows
-			path_int,					// A col
-			1,							// alpha	
-			value_each,					// A
-			path_int,					// The size of the first dimension of matrix A.
-			bskop->w,					// Vector X.
-			1,							// Stride within X. 
-			0,							// beta
-			value_weighted,				// Vector Y
-			1							// Stride within Y
-		);
-
-		// Determine the price with stirke
-		// If the price is less than k, don't execute
-		float call = 0.0f;
-		for (int i = 0; i < path_int; i++) {
-			call += (value_weighted[i] > bskop->k) ? (value_weighted[i] - bskop->k) : 0;
-		}
-
-		// Store to the next row of price matrix
-		prices[row_idx * path_ext + i] = call / path_int;
+	dim3 grid_bskop((path_ext - 1) / block.x + 1, 1);
+	
+	float* list = NULL;
+	float* value_weighted = NULL;
+	CUDA_CALL(cudaMallocManaged((void**)&list, bsk_n * 5 * sizeof(float)));
+	CUDA_CALL(cudaMallocManaged((void**)&value_weighted, path_int * path_ext * sizeof(float)));
+	//[s0, mean, std, x, w]
+	for (int i = 0; i < bsk_n; i++) {
+		list[i + bsk_n * 0] = bskop->stocks[i].s0;
+		list[i + bsk_n * 1] = bskop->stocks[i].mean;
+		list[i + bsk_n * 2] = bskop->stocks[i].std;
+		list[i + bsk_n * 3] = (float)bskop->stocks[i].x;
+		list[i + bsk_n * 4] = bskop->w[i];
+	}
+	for (int i = 0; i < path_int * path_ext; i++) {
+		value_weighted[i] = 0.0f;
 	}
 
-	CUDA_CALL(cudaFree(bskop_ext_rn));
-	free(value_each);
-	free(value_weighted);
-	free(bskop_stock_price);
+	//price_bskop_reverse<< <grid_bskop, block >> > (
+	price_bskop<< <grid_bskop, block >> > (
+		path_ext,
+		path_int,
+		&bskop_rn[path_ext * bsk_n],	
+		bskop_rn,
+		bskop->n,
+		var_t,
+		list,				//s0
+		&list[bsk_n * 1],	//mean
+		&list[bsk_n * 2],	//std
+		&list[bsk_n * 3],	//x
+		bskop_t,	
+		bskop->k,
+		&list[bsk_n * 4],	//w
+		//value_weighted,
+		&prices[row_idx * path_ext]
+		);
+	
+	cudaDeviceSynchronize();
+	
+	CUDA_CALL(cudaFree(list));
+	CUDA_CALL(cudaFree(value_weighted));
+	CUDA_CALL(cudaFree(bskop_rn));
+
+	//float* bskop_stock_price = (float*)malloc((size_t)bsk_n * sizeof(float));
+	//float* value_each = (float*)malloc((size_t)path_int * bskop->n * sizeof(float));
+	//float* value_weighted = (float*)malloc((size_t)path_int * sizeof(float));
+	//Stock* s;
+	//int offset = 0;
+	//for (int i = 0; i < path_ext; i++) {
+	//	// reprice underlying stocks
+	//	// will be used in inner as s0
+	//	for (int j = 0; j < bsk_n; j++) {
+	//		s = &(bskop->stocks[j]);
+	//		bskop_stock_price[j] = s->s0
+	//			* exp((s->mean - 0.5f * s->std * s->std) * var_t
+	//				+ s->std * sqrtf(float(var_t)) * bskop_rn[i * bsk_n + j]);
+	//		std::printf("%d %f\n", i, bskop_stock_price[j]);
+	//	}
+	//	
+	//
+	//	// Inner loop
+	//	// The random number has already been transformed with cov
+	//	// Calculate each value with the correlated-random numbers
+	//	// random numbers[n][path_int]
+	//	for (int j = 0; j < bsk_n; j++) {
+	//		s = &(bskop->stocks[j]);
+	//		offset = path_ext * bsk_n + path_int * bsk_n * i;
+	//		for (int k = 0; k < path_int; k++) {
+	//			value_each[j * path_int + k] = s->x *
+	//				bskop_stock_price[j] * exp((s->mean - 0.5f * s->std * s->std) * bskop_t
+	//					+ s->std * sqrtf(float(bskop_t)) * bskop_rn[offset + k * bsk_n + j]);
+	//			std::printf("- idx-%d i-%d n-%d  %f  %f\n", i, k, j, 
+	//				value_each[j * path_int + k], bskop_rn[offset + k * bsk_n + j]);
+	//		}
+	//	}
+	//
+	//	// Multiply with weight
+	//	// Value_each[n][path_int]
+	//	// value_each[inter * n] * weight[n * 1]
+	//	cblas_sgemv(CblasRowMajor,		// Specifies row-major
+	//		CblasTrans,					// Specifies whether to transpose matrix A.
+	//		bskop->n,					// A rows
+	//		path_int,					// A col
+	//		1,							// alpha	
+	//		value_each,					// A
+	//		path_int,					// The size of the first dimension of matrix A.
+	//		bskop->w,					// Vector X.
+	//		1,							// Stride within X. 
+	//		0,							// beta
+	//		value_weighted,				// Vector Y
+	//		1							// Stride within Y
+	//	);
+	//
+	//	// Determine the price with stirke
+	//	// If the price is less than k, don't execute
+	//	float call = 0.0f;
+	//	for (int j = 0; j < path_int; j++) {
+	//		std::printf("- %d %f\n", i, value_weighted[j]);
+	//		call += (value_weighted[j] > bskop->k) ? (value_weighted[j] - bskop->k) : 0;
+	//	}
+	//
+	//	// Store to the next row of price matrix
+	//	prices[row_idx * path_ext + i] = call / path_int;
+	//}
+	//
+	////CUDA_CALL(cudaFree(bskop_ext_rn));
+	//free(value_each);
+	//free(value_weighted);
+	//free(bskop_stock_price);
+
+	
 	row_idx++;
 
 
@@ -670,11 +724,10 @@ double NestedMonteCarloVaR::execute() {
 	////free(barop_rn);
 	////delete(rng);
 
-	CUDA_CALL(cudaFree(bond_rn));
+	
 	CUDA_CALL(cudaFree(prices));
 	CUDA_CALL(cudaFree(loss));
-	CUDA_CALL(cudaFree(stock_rn));
-	CUDA_CALL(cudaFree(bskop_ext_rn));
+	
 
 	chrono::steady_clock::time_point end = chrono::steady_clock::now();
 	chrono::duration<double, std::milli> elapsed = end - start;

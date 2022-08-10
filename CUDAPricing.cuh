@@ -7,6 +7,8 @@
 #include <curand_kernel.h>
 #include <curand.h>
 
+#include <cstdio>
+
 #define DATA_BLOCK 32
 
 __global__ void moro_inv(float* data, int cnt, float mean, float std);
@@ -14,8 +16,50 @@ __global__ void moro_inv_v2(float* data, int cnt, float mean, float std);
 __global__ void price_bond(float* rn, int cnt,
 	float bond_par, float bond_c, int bond_m, float* bond_y,
 	float* prices);
-__global__ void price_stock(float* rn, int cnt,
-	float s0, float mean, float std, int x, int t,
-	float* prices);
+__global__ void price_stock(
+	const float* rn,
+	const int cnt,
+	const float s0,
+	const float mean,
+	const float std,
+	const int x,
+	const int t,
+	float* prices
+);
+
+__global__ void price_bskop(
+	const int cnt,
+	const int path_int,
+	const float* rn,
+	float* s0_rn,
+	const int stock_n,
+	const int var_t,
+	const float* s0,
+	const float* mean,
+	const float* std,
+	const float* stock_x,
+	const int bskop_t,
+	const float bskop_k,
+	const float* w,
+	float* prices
+);
+
+__global__ void price_bskop_reverse(
+	const int cnt,
+	const int path_int,
+	const float* rn,
+	float* s0_rn,
+	const int stock_n,
+	const int var_t,
+	const float* s0,
+	const float* mean,
+	const float* std,
+	const float* stock_x,
+	const int bskop_t,
+	const float bskop_k,
+	const float* w,
+	float* value_weighted,
+	float* prices
+);
 
 #endif
