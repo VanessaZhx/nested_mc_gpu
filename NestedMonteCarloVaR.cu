@@ -557,7 +557,7 @@ double NestedMonteCarloVaR::execute() {
 	// Up-in-call
 	dim3 grid_barop((path_ext - 1) / block.x + 1, 1);
 	//
-	/*price_barrier<< <grid_barop, block >> >(
+	price_barrier<< <grid_barop, block >> >(
 		barop_ext_rn,
 		barop_rn,
 		path_ext,
@@ -571,9 +571,9 @@ double NestedMonteCarloVaR::execute() {
 		barop->h,
 		barop->k,
 		&prices[row_idx * path_ext]
-	);*/
+	);
 	
-	price_barrier_early << <grid_barop, block >> > (
+	/*price_barrier_early << <grid_barop, block >> > (
 		barop_ext_rn,
 		barop_rn,
 		path_ext,
@@ -587,7 +587,7 @@ double NestedMonteCarloVaR::execute() {
 		barop->h,
 		barop->k,
 		&prices[row_idx * path_ext]
-		);
+		);*/
 	
 	cudaDeviceSynchronize();
 	CUDA_CALL(cudaFree(barop_ext_rn));
@@ -597,7 +597,7 @@ double NestedMonteCarloVaR::execute() {
 	row_idx = 0;
 	rng->set_offset(1024);
 
-	cout << endl << "Prices:" << endl;
+	/*cout << endl << "Prices:" << endl;
 	for (int i = 0; i < port_n; i++) {
 		for (int j = 0; j < path_ext; j++) {
 			cout << prices[i * path_ext + j] << " ";
@@ -606,7 +606,7 @@ double NestedMonteCarloVaR::execute() {
 	}
 
 	cout << endl << "Start Price:" << endl;
-	cout << port_p0 << endl;
+	cout << port_p0 << endl;*/
 
 
 
@@ -632,20 +632,20 @@ double NestedMonteCarloVaR::execute() {
 	// prices[path_ext * port_n] * w[port_n * 1]
 	// Loss = -(p-p0) = p0-p
 	// Loss = p0 - e^-rT * (price*w) = loss + (- e^-rT) *(price*w)
-	// haven't get ln here, but doesn't affect sorting
-	float discount = -exp(-1.0f * risk_free * var_t);
+	const float discount = -exp(-1.0f * risk_free * var_t);
 	
-	//float zero = 0.0f;
 	CUBLAS_CALL(cublasSgemv(handle,
-		CUBLAS_OP_T,	// Use storage by row
-		port_n,			// rows of A
+		CUBLAS_OP_N,	// Use storage by row
 		path_ext,		// cols of A
+		port_n,			// rows of A
 		&discount,		// alpha
+		//&one,		// alpha
 		prices,			// A
-		port_n,			// leading dimension of two-dimensional array used to store matrix A.
+		path_ext,			// leading dimension of two-dimensional array used to store matrix A.
 		w,				// x
 		1,				// stride of x
 		&one,			// beta
+		//&zero,			// beta
 		loss,			// y
 		1				// stride of y
 	));

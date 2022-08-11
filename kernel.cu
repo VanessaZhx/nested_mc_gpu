@@ -2,10 +2,10 @@
 
 int main()
 {
-	const int exp_times = 1;   // Total times of MC
+	const int exp_times = 10;   // Total times of MC
 
-	const int path_ext = 2;  // Number of the outer MC loops
-	const int path_int = 10;  // Number of the inner MC loops
+	const int path_ext = 4*1024;  // Number of the outer MC loops
+	const int path_int = 4*1024;  // Number of the inner MC loops
 
 	const int var_t = 1;					// VaR duration
 	const float var_per = 0.95f;				// 1-percentile
