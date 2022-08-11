@@ -1,11 +1,16 @@
 ﻿#include "NestedMonteCarloVaR.cuh"
 
-int main()
+int main(int argc, char* argv[])
 {
-	const int exp_times = 10;   // Total times of MC
+	int exp_times = 20;   // Total times of MC
 
-	const int path_ext = 1024;  // Number of the outer MC loops
-	const int path_int = 1024;  // Number of the inner MC loops
+	int path_ext = 1024;  // Number of the outer MC loops
+	int path_int = 1024;  // Number of the inner MC loops
+
+	// input: path_ext, path_int, exp_times
+	if (argc >= 2)  path_ext = atoi(argv[1]);
+	if (argc >= 3)  path_int = atoi(argv[2]);
+	if (argc >= 4)  exp_times = atoi(argv[3]);
 
 	cout << endl << "== SET UP ==" << endl;
 	cout << "Experiment Times: " << exp_times << endl;
@@ -116,7 +121,11 @@ int main()
 	double exe_time = 0.0;
 	for (int i = 0; i < exp_times; i++) {
 		exe_time += mc->execute();
-		cout << "Experiment # " << i << " finished." << endl;
+		if ((i == 0) || (i + 1 == exp_times)
+			||(exp_times <= 10)
+			|| (exp_times > 10 && i % (exp_times / 10) == 0)) {
+			cout << "Experiment # " << i << " finished." << endl;
+		}
 	}
 
 	cout << endl << "== RESULT ==" << endl;
