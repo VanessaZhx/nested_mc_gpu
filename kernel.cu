@@ -4,13 +4,59 @@ int main(int argc, char* argv[])
 {
 	int exp_times = 20;   // Total times of MC
 
-	int path_ext = 1024;  // Number of the outer MC loops
-	int path_int = 1024;  // Number of the inner MC loops
+	int path_ext = 10;  // Number of the outer MC loops
+	int path_int = 10;  // Number of the inner MC loops
 
 	// input: path_ext, path_int, exp_times
-	if (argc >= 2)  path_ext = atoi(argv[1]);
+	/*if (argc >= 2)  path_ext = atoi(argv[1]);
 	if (argc >= 3)  path_int = atoi(argv[2]);
-	if (argc >= 4)  exp_times = atoi(argv[3]);
+	if (argc >= 4)  exp_times = atoi(argv[3]);*/
+
+	bool combined_rng = false;
+	bool barrier_early = false;
+	int cnt = 0;
+
+	for (int i = 1; i < argc; i++) {
+		char* pchar = argv[i];
+		switch (pchar[0]) {			// Decide option type
+		case '-': {					// For option
+			switch (pchar[1]) {
+			case 'c':		// combined_rng
+				combined_rng = true;
+				break;
+			case 'e':		// barrier early stop
+				barrier_early = true;
+				break;
+			default:		// unrecognisable - show usage
+				cout << endl << "===================== USAGE =====================" << endl;
+				cout << "\t-c\tUse combined sobol RNG and normal transfer" << endl;
+				cout << "\t-e\tUse early stop strategy for barrier option" << endl;
+				cout << "Enter up to 3 numbers for [path_ext, path_int, exp_times]" << endl;
+				cout << "Default setup: [" << path_ext << ", " << path_int << ", "
+					<< exp_times << "]" << endl;
+				return;
+			}
+			break;
+		}
+		default:				// For numbers(not concerning rubust so
+								// char will be treated as numbers)
+			switch (cnt) {
+			case 0:
+				path_ext = atoi(argv[i]);
+				break;
+			case 1:
+				path_int = atoi(argv[i]);
+				break;
+			case 2:
+				exp_times = atoi(argv[i]);
+				break;
+			default:
+				break;
+			}
+			cnt++;
+		}
+	}
+
 
 	cout << endl << "== SET UP ==" << endl;
 	cout << "Experiment Times: " << exp_times << endl;
@@ -18,18 +64,17 @@ int main(int argc, char* argv[])
 	cout << "Path Internal: " << path_int << endl;
 
 	cout << endl << "== DEVICE ==" << endl;
-	//cout << "CPU" << endl;
 
 	int deviceCount;
 
-	CUDA_CALL(cudaGetDeviceCount(&deviceCount), "GetDeviceCount", __FILE__, __LINE__);
+	CUDA_CALL(cudaGetDeviceCount(&deviceCount));
 
 	printf("Number of CUDA devices %d.\n", deviceCount);
 
 	for (int dev = 0; dev < deviceCount; dev++) {
 		cudaDeviceProp deviceProp;
 
-		CUDA_CALL(cudaGetDeviceProperties(&deviceProp, dev), "Get Device Properties", __FILE__, __LINE__);
+		CUDA_CALL(cudaGetDeviceProperties(&deviceProp, dev));
 
 		if (dev == 0) {
 			if (deviceProp.major == 9999 && deviceProp.minor == 9999) {
@@ -48,9 +93,9 @@ int main(int argc, char* argv[])
 		printf("Device name:                %s\n", deviceProp.name);
 		printf("Major revision number:      %d\n", deviceProp.major);
 		printf("Minor revision Number:      %d\n", deviceProp.minor);
-		printf("Total Global Memory:        %d\n", deviceProp.totalGlobalMem);
-		printf("Total shared mem per block: %d\n", deviceProp.sharedMemPerBlock);
-		printf("Total const mem size:       %d\n", deviceProp.totalConstMem);
+		printf("Total Global Memory:        %zd\n", deviceProp.totalGlobalMem);
+		printf("Total shared mem per block: %zd\n", deviceProp.sharedMemPerBlock);
+		printf("Total const mem size:       %zd\n", deviceProp.totalConstMem);
 		printf("Warp size:                  %d\n", deviceProp.warpSize);
 		printf("Maximum block dimensions:   %d x %d x %d\n", deviceProp.maxThreadsDim[0], \
 			deviceProp.maxThreadsDim[1], \
