@@ -196,11 +196,8 @@ double NestedMonteCarloVaR::execute() {
 	** RN is used to move yield curve up/down, N~(0, sigma^2)
 	** [path_ext, 1]
 	*/
-	// Set up and allocate
 	dim3 grid_bond_rn((path_ext - 1) / block.x + 1, 1);
 	CUDA_CALL(cudaMallocManaged((void**)&bond_rn, path_ext * sizeof(float)));
-
-	// Generate and convert
 	rng->generate_sobol(bond_rn, 1, path_ext);
 	moro_inv << < grid_bond_rn, block >> > (bond_rn, path_ext, 0, bond->sigma);
 
@@ -229,7 +226,7 @@ double NestedMonteCarloVaR::execute() {
 	rng->generate_sobol(stock_rn, 1, path_ext);
 	moro_inv << < grid_stock_rn, block >> > (stock_rn, path_ext, 0, 1);
 
-	cudaDeviceSynchronize();
+	//cudaDeviceSynchronize();
 
 	/*cout << "Random Numbers:\n";
 	for (int i = 0; i < path_ext; i++) {
@@ -237,6 +234,36 @@ double NestedMonteCarloVaR::execute() {
 		cout << endl;
 	}*/
 
+
+	/* == Barrier Option ==
+	** Need two set of random numbers
+	** First: to reprice underlying stocks at H(use as S0 in inner)
+	** [path_ext, var_t]
+	** Second: inner loop, to reprice option
+	** [path_ext, [path_int, steps]] => [path_ext * path_int, steps]
+	*/
+	// Random number sequence for barrier option(outer loop)
+	dim3 grid_barop_rn_ext((path_ext * var_t - 1) / block.x + 1, 1);
+	float* barop_ext_rn;
+	CUDA_CALL(cudaMallocManaged((void**)&barop_ext_rn, path_ext * var_t * sizeof(float)));
+	rng->generate_sobol(barop_ext_rn, var_t, path_ext);
+	moro_inv << < grid_barop_rn_ext, block >> > (barop_ext_rn, path_ext * var_t, 0, 1);
+
+	// Random number sequence for barrier option(inner loop)
+	dim3 grid_barop_rn_int((path_ext * path_int * barop_t - 1) / block.x + 1, 1);
+	CUDA_CALL(cudaMallocManaged((void**)&barop_rn, path_ext * path_int * barop_t * sizeof(float)));
+	rng->generate_sobol(barop_rn, barop_t, path_ext * path_int);
+	moro_inv << < grid_barop_rn_int, block >> > (barop_rn, path_ext * path_int * barop_t, 0, 1);
+
+	//cudaDeviceSynchronize();
+
+	/*cout << "Random Numbers:\n";
+	for (int i = 0; i < path_ext * path_int; i++) {
+		for (int j = 0; j < barop_t; j++) {
+			cout << barop_rn[i * barop_t + j] << " ";
+		}
+		cout << endl;
+	}*/
 
 
 	/* == Basket Option ==
@@ -316,7 +343,7 @@ double NestedMonteCarloVaR::execute() {
 		bsk_n							// C row
 	));
 
-	//cudaDeviceSynchronize();
+	cudaDeviceSynchronize();
 
 	CUDA_CALL(cudaFree(bskop_tmp_rn));
 	CUDA_CALL(cudaFree(A));
@@ -340,35 +367,7 @@ double NestedMonteCarloVaR::execute() {
 	
 	
 
-	/* == Barrier Option ==
-	** Need two set of random numbers
-	** First: to reprice underlying stocks at H(use as S0 in inner)
-	** [path_ext, var_t]
-	** Second: inner loop, to reprice option
-	** [path_ext, [path_int, steps]] => [path_ext * path_int, steps]
-	*/
-	// Random number sequence for barrier option(outer loop)
-	dim3 grid_barop_rn_ext((path_ext * var_t - 1) / block.x + 1, 1);
-	float* barop_ext_rn;
-	CUDA_CALL(cudaMallocManaged((void**)&barop_ext_rn, path_ext * var_t * sizeof(float)));
-	rng->generate_sobol(barop_ext_rn, var_t, path_ext);
-	moro_inv << < grid_barop_rn_ext, block >> > (barop_ext_rn, path_ext * var_t, 0, 1);
-
-	// Random number sequence for barrier option(inner loop)
-	dim3 grid_barop_rn_int((path_ext * path_int * barop_t - 1) / block.x + 1, 1);
-	CUDA_CALL(cudaMallocManaged((void**)&barop_rn, path_ext * path_int * barop_t * sizeof(float)));
-	rng->generate_sobol(barop_rn, barop_t, path_ext * path_int);
-	moro_inv << < grid_barop_rn_int, block >> > (barop_rn, path_ext * path_int * barop_t, 0, 1);
 	
-	cudaDeviceSynchronize();
-
-	cout << "Random Numbers:\n";
-	for (int i = 0; i < path_ext * path_int; i++) {
-		for (int j = 0; j < barop_t; j++) {
-			cout << barop_rn[i * barop_t + j] << " ";
-		}
-		cout << endl;
-	}
 
 
 
@@ -381,8 +380,7 @@ double NestedMonteCarloVaR::execute() {
 	// Save the prices
 	CUDA_CALL(cudaMallocManaged((void**)&prices, path_ext* port_n * sizeof(float)));
 
-	//float *pr = (float*)malloc((size_t)path_ext * port_n * sizeof(float));
-
+	
 	/* ====================
 	** ==      Bond      ==
 	** ==================== */
@@ -663,21 +661,6 @@ double NestedMonteCarloVaR::execute() {
 	}
 	cout << endl;*/
 
-	//CUBLAS_CALL(cublasSgemm(handle,
-	//	CUBLAS_OP_T,	// transa
-	//	CUBLAS_OP_T,	// transb
-	//	N,				// rows of C
-	//	M,				// col of C
-	//	N,				// number of columns of op(A) and rows of op(B).(Multi by)
-	//	&one,			// alpha
-	//	Q_dev,			// A
-	//	N,				// leading dimension of two-dimensional array used to store the matrix A.
-	//	x_dev,			// B
-	//	M,				// leading dimension of two-dimensional array used to store the matrix B
-	//	&zero,			// beta
-	//	Y_dev,			// C
-	//	N));			// leading dimension of a two-dimensional array used to store the matrix C.
-
 
 	// ====================================================
 	//						Sort
@@ -708,13 +691,6 @@ double NestedMonteCarloVaR::execute() {
 	cout << endl;
 	cout << "var:" << var << endl;
 	cout << "cvar:" << cvar << endl;
-
-	//free(loss);
-	//free(prices);
-	////free(bskop_rn);
-	//free(bond_rn);
-	////free(barop_rn);
-	////delete(rng);
 
 	
 	CUDA_CALL(cudaFree(prices));
