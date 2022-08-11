@@ -28,6 +28,8 @@ public:
 	NestedMonteCarloVaR(int pext, int pint,
 		int t, float per, int port_n, float* weight, float risk_free);
 
+	void optimise_init(bool combined_rng, bool barrier_early);
+
 	void bond_init(float bond_par, float bond_c, int bond_m,
 		float* bond_y, float sig, int idx);
 
@@ -44,6 +46,9 @@ public:
 	void output_res(float* data, int len);
 
 private:
+	bool combined_rng = false;
+	bool barrier_early = false;
+
 	int path_ext = 0;  // Number of the outer MC loops
 	int path_int = 0;  // Number of the inner MC loops
 
