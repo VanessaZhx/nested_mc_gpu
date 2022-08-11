@@ -78,4 +78,21 @@ __global__ void price_barrier(
 	float* prices
 );
 
+// with early stop
+__global__ void price_barrier_early(
+	const float* ext_rn,
+	const float* int_rn,
+	const int cnt,
+	const int path_int,
+	const float s0,
+	const float mean,
+	const float std,
+	const int x,
+	const int var_t,
+	const int barop_t,
+	const int barop_h,
+	const int barop_k,
+	float* prices
+);
+
 #endif

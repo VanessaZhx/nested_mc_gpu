@@ -559,7 +559,7 @@ double NestedMonteCarloVaR::execute() {
 	// Up-in-call
 	dim3 grid_barop((path_ext - 1) / block.x + 1, 1);
 	//
-	price_barrier<< <grid_barop, block >> >(
+	/*price_barrier<< <grid_barop, block >> >(
 		barop_ext_rn,
 		barop_rn,
 		path_ext,
@@ -573,73 +573,31 @@ double NestedMonteCarloVaR::execute() {
 		barop->h,
 		barop->k,
 		&prices[row_idx * path_ext]
-	);
-
+	);*/
+	
+	price_barrier_early << <grid_barop, block >> > (
+		barop_ext_rn,
+		barop_rn,
+		path_ext,
+		path_int,
+		barop->s->s0,
+		barop->s->mean,
+		barop->s->std,
+		barop->s->x,
+		var_t,
+		barop_t,
+		barop->h,
+		barop->k,
+		&prices[row_idx * path_ext]
+		);
+	
 	cudaDeviceSynchronize();
 	CUDA_CALL(cudaFree(barop_ext_rn));
 	CUDA_CALL(cudaFree(barop_rn));
 
-
-	//float barop_stock_price = 0.0f;		// Stock price at var_t
-	//float barop_max_price = 0.0f;		// Max price throughout the path
-	//float barop_price = 0.0f;			// option price at one step
-	//float call = 0.0f;					// Accumulated price for a inner path
-
-	//Stock* s = NULL;
-	//for (int i = 0; i < path_ext; i++) {
-	//	s = barop->s;
-
-	//	// reprice underlying stocks
-	//	// will be used in inner as s0
-	//	barop_stock_price = s->s0 * exp((s->mean - 0.5f * s->std * s->std) * var_t
-	//		+ s->std * sqrtf(float(var_t)) * barop_ext_rn[i]);
-	//	// For consistancy with gpu implementation (calculate every path in parallel)
-	//	// So here we don't use early stop, just record the max
-	//	barop_max_price = barop_stock_price;
-
-	//	// Inner loop
-	//	call = 0.0f;
-	//	for (int j = 0; j < path_int; j++) {
-	//		// Loop over steps in one path, get max price
-	//		for (int k = 0; k < barop_t; k++) {
-	//			// Calculate price at this step
-	//			barop_price = barop_stock_price * exp((s->mean - 0.5f * s->std * s->std) * k
-	//				+ s->std * sqrtf(float(k)) * barop_rn[i * path_int * barop_t + j * barop_t + k]);
-
-	//			// Check maximum
-	//			if (barop_price > barop_max_price) {
-	//				barop_max_price = barop_price;
-	//			}
-	//		}
-	//		//cout << endl<< barop_price << endl;
-
-	//		// Compare with barrier, the option exists if max price is larger than barrier
-	//		if (barop_max_price > barop->h) {
-	//			// barop_price will be the last price
-	//			// max{St-K, 0}
-	//			call += (barop_price > barop->k) ? barop_price - barop->k : 0;
-	//		}
-	//	}
-	//	//cout << call << endl;
-
-	//	// Get expected price at var_t
-	//	prices[row_idx * path_ext + i] = s->x * (call / path_int);
-	//}
-	//free(barop_ext_rn);
-
-
 	// Reset
 	row_idx = 0;
 	rng->set_offset(1024);
-
-	/*cout << endl << "pr:" << endl;
-	for (int i = 0; i < port_n; i++) {
-		for (int j = 0; j < path_ext; j++) {
-			cout << pr[i * path_ext + j] << " ";
-		}
-		cout << endl;
-	}*/
-
 
 	cout << endl << "Prices:" << endl;
 	for (int i = 0; i < port_n; i++) {

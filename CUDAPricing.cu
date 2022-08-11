@@ -226,7 +226,6 @@ __global__ void price_barrier(
 			// Calculate price at this step
 			barop_price = stock_price * exp(tmp1 * k
 				+ std * sqrtf(float(k)) * int_rn[Idx * path_int * barop_t + j * barop_t + k]);
-
 			// Check maximum
 			if (barop_price > max_price) {
 				max_price = barop_price;
@@ -247,3 +246,61 @@ __global__ void price_barrier(
 	prices[Idx] = x * (call / path_int);
 }
 	
+// with early stop
+__global__ void price_barrier_early(
+	const float* ext_rn,
+	const float* int_rn,
+	const int cnt,
+	const int path_int,
+	const float s0,
+	const float mean,
+	const float std,
+	const int x,
+	const int var_t,
+	const int barop_t,
+	const int barop_h,
+	const int barop_k,
+	float* prices
+) {
+	// Each thread handle one outter, calculate the price and store it
+	size_t Idx = threadIdx.x + blockDim.x * blockIdx.x;
+	if (Idx >= cnt) return;
+
+	// reprice underlying stocks
+	// will be used in inner as s0
+	float stock_price = s0 * exp((mean - 0.5f * std * std) * var_t
+		+ std * sqrtf(float(var_t)) * ext_rn[Idx]);
+
+	// Inner loop
+	bool acted = false;
+	float call = 0.0f;
+	float barop_price = 0.0f;
+	float tmp1 = mean - 0.5f * std * std;
+	for (int j = 0; j < path_int; j++) {
+		acted = false;
+		// Loop over steps in one path 
+		for (int k = 0; k < barop_t; k++) {
+			// Calculate price at this step
+			barop_price = stock_price * exp(tmp1 * k
+				+ std * sqrtf(float(k)) * int_rn[Idx * path_int * barop_t + j * barop_t + k]);
+
+			// Check if exceed H, early stop
+			if (barop_price > barop_h) {
+				acted = true;
+				break;
+			}
+		}
+		//cout << endl<< barop_price << endl;
+		if (acted) {
+			// barop_price will be the last price
+			barop_price = stock_price * exp(tmp1 * (barop_t-1) + std * 
+				sqrtf(float((barop_t - 1))) * int_rn[Idx * path_int * barop_t +
+												j * barop_t + barop_t - 1]);
+			call += (barop_price > barop_k) ? barop_price - barop_k : 0;
+		}
+	}
+	//cout << call << endl;
+
+	// Get expected price at var_t
+	prices[Idx] = x * (call / path_int);
+}
