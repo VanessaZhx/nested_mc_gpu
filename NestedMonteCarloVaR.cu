@@ -673,7 +673,7 @@ double NestedMonteCarloVaR::execute() {
 	}
 	cout << endl;*/
 
-	////output_res(loss, path_ext);
+	//output_res(loss, path_ext);
 
 
 	// ====================================================
@@ -688,9 +688,9 @@ double NestedMonteCarloVaR::execute() {
 	}
 	cvar /= path_ext - pos;
 
-	cout << endl;
+	/*cout << endl;
 	cout << "var:" << var << endl;
-	cout << "cvar:" << cvar << endl;
+	cout << "cvar:" << cvar << endl;*/
 
 	
 	CUDA_CALL(cudaFree(prices));
@@ -706,7 +706,7 @@ double NestedMonteCarloVaR::execute() {
 void NestedMonteCarloVaR::output_res(float* data, int len) {
 	// open a file for outputting the matrix
 	ofstream outputfile;
-	outputfile.open("C:/Users/windows/Desktop/res.txt");
+	outputfile.open("C:/Users/windows/Desktop/res_gpu.txt");
 
 	// output the matrix to the file
 	if (outputfile.is_open()) {
