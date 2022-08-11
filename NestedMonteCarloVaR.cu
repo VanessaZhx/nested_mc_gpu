@@ -1,5 +1,7 @@
 #include "NestedMonteCarloVaR.cuh"
 
+#define COMBINED_RNG 1
+#define BARRIER_EARLY 1
 
 using namespace std;
 
@@ -198,8 +200,13 @@ double NestedMonteCarloVaR::execute() {
 	*/
 	dim3 grid_bond_rn((path_ext - 1) / block.x + 1, 1);
 	CUDA_CALL(cudaMallocManaged((void**)&bond_rn, path_ext * sizeof(float)));
+
+#if COMBINED_RNG == 0
 	rng->generate_sobol(bond_rn, 1, path_ext);
 	moro_inv << < grid_bond_rn, block >> > (bond_rn, path_ext, 0, bond->sigma);
+#else
+	rng->generate_sobol_normal(bond_rn, 1, path_ext, bond->sigma);
+#endif // COMBINED_RNG
 
 	//cudaDeviceSynchronize();
 
@@ -223,8 +230,14 @@ double NestedMonteCarloVaR::execute() {
 	*/
 	dim3 grid_stock_rn((path_ext - 1) / block.x + 1, 1);
 	CUDA_CALL(cudaMallocManaged((void**)&stock_rn, path_ext * sizeof(float)));
+
+#if COMBINED_RNG == 0
 	rng->generate_sobol(stock_rn, 1, path_ext);
 	moro_inv << < grid_stock_rn, block >> > (stock_rn, path_ext, 0, 1);
+#else
+	rng->generate_sobol_normal(stock_rn, 1, path_ext);
+#endif // COMBINED_RNG
+	
 
 	//cudaDeviceSynchronize();
 
@@ -242,19 +255,28 @@ double NestedMonteCarloVaR::execute() {
 	** Second: inner loop, to reprice option
 	** [path_ext, [path_int, steps]] => [path_ext * path_int, steps]
 	*/
-	// Random number sequence for barrier option(outer loop)
+	// Random number sequence for barrier option
 	dim3 grid_barop_rn_ext((path_ext * var_t - 1) / block.x + 1, 1);
+	dim3 grid_barop_rn_int((path_ext * path_int * barop_t - 1) / block.x + 1, 1);
+
 	float* barop_ext_rn;
-	CUDA_CALL(cudaMallocManaged((void**)&barop_ext_rn, path_ext * var_t * sizeof(float)));
+	CUDA_CALL(cudaMallocManaged((void**)&barop_ext_rn, path_ext * var_t * sizeof(float)));	
+	CUDA_CALL(cudaMallocManaged((void**)&barop_rn, path_ext * path_int * barop_t * sizeof(float)));
+
+
+#if COMBINED_RNG == 0
 	rng->generate_sobol(barop_ext_rn, var_t, path_ext);
 	moro_inv << < grid_barop_rn_ext, block >> > (barop_ext_rn, path_ext * var_t, 0, 1);
 
-	// Random number sequence for barrier option(inner loop)
-	dim3 grid_barop_rn_int((path_ext * path_int * barop_t - 1) / block.x + 1, 1);
-	CUDA_CALL(cudaMallocManaged((void**)&barop_rn, path_ext * path_int * barop_t * sizeof(float)));
 	rng->generate_sobol(barop_rn, barop_t, path_ext * path_int);
 	moro_inv << < grid_barop_rn_int, block >> > (barop_rn, path_ext * path_int * barop_t, 0, 1);
 
+#else
+	rng->generate_sobol_normal(barop_ext_rn, var_t, path_ext);
+	rng->generate_sobol_normal(barop_rn, barop_t, path_ext * path_int);
+#endif // COMBINED_RNG
+	
+	
 	//cudaDeviceSynchronize();
 
 	/*cout << "Random Numbers:\n";
@@ -281,8 +303,15 @@ double NestedMonteCarloVaR::execute() {
 	CUDA_CALL(cudaMallocManaged((void**)&bskop_rn, path_ext * (path_int + 1) * bsk_n * sizeof(float)));
 	CUDA_CALL(cudaMallocManaged((void**)&bskop_tmp_rn, path_ext * (path_int + 1) * bsk_n * sizeof(float)));
 	
-	rng->generate_sobol(bskop_tmp_rn, bsk_n, path_ext * (path_int + 1));
-	moro_inv << < grid_bsk_rn, block >> > (bskop_tmp_rn, path_ext * (path_int + 1) * bsk_n, 0, 1);
+	
+
+#if COMBINED_RNG == 0
+	rng->generate_sobol(bskop_tmp_rn, bsk_n, path_ext* (path_int + 1));
+	moro_inv << < grid_bsk_rn, block >> > (bskop_tmp_rn, path_ext* (path_int + 1)* bsk_n, 0, 1);
+
+#else
+	rng->generate_sobol_normal(bskop_tmp_rn, bsk_n, path_ext* (path_int + 1));
+#endif // COMBINED_RNG
 
 	cudaDeviceSynchronize();
 
@@ -301,21 +330,6 @@ double NestedMonteCarloVaR::execute() {
 	float zero = 0.0f;
 	cublasHandle_t handle;
 	CUBLAS_CALL(cublasCreate(&handle));
-	//cblas_sgemm(CblasRowMajor,
-	//	CblasNoTrans,
-	//	CblasTrans,
-	//	bsk_n,								// result row
-	//	path_ext * path_int,				// result col
-	//	bsk_n,								// length of "multiple by"
-	//	1,									// alpha
-	//	bskop->A,							// A
-	//	bsk_n,								// col of A
-	//	bskop_tmp_rn,						// B
-	//	bsk_n,								// col of B
-	//	0,									// beta
-	//	bskop_rn,							// C
-	//	path_ext * path_int					// col of C
-	//);
 
 	float* A = NULL;
 	CUDA_CALL(cudaMallocManaged((void**)&A, bsk_n * bsk_n * sizeof(float)));
@@ -365,10 +379,6 @@ double NestedMonteCarloVaR::execute() {
 	//}
 	//
 	
-	
-
-	
-
 
 
 	// ====================================================
@@ -556,24 +566,9 @@ double NestedMonteCarloVaR::execute() {
 	** ==================== */
 	// Up-in-call
 	dim3 grid_barop((path_ext - 1) / block.x + 1, 1);
-	//
-	price_barrier<< <grid_barop, block >> >(
-		barop_ext_rn,
-		barop_rn,
-		path_ext,
-		path_int,
-		barop->s->s0,
-		barop->s->mean,
-		barop->s->std,
-		barop->s->x,
-		var_t,
-		barop_t,
-		barop->h,
-		barop->k,
-		&prices[row_idx * path_ext]
-	);
 	
-	/*price_barrier_early << <grid_barop, block >> > (
+#if BARRIER_EARLY == 0
+	price_barrier << <grid_barop, block >> > (
 		barop_ext_rn,
 		barop_rn,
 		path_ext,
@@ -587,7 +582,24 @@ double NestedMonteCarloVaR::execute() {
 		barop->h,
 		barop->k,
 		&prices[row_idx * path_ext]
-		);*/
+		);
+#else
+	price_barrier_early << <grid_barop, block >> > (
+		barop_ext_rn,
+		barop_rn,
+		path_ext,
+		path_int,
+		barop->s->s0,
+		barop->s->mean,
+		barop->s->std,
+		barop->s->x,
+		var_t,
+		barop_t,
+		barop->h,
+		barop->k,
+		&prices[row_idx * path_ext]
+		);
+#endif // BARRIER_EARLY
 	
 	cudaDeviceSynchronize();
 	CUDA_CALL(cudaFree(barop_ext_rn));
