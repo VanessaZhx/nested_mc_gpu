@@ -78,6 +78,9 @@ private:
 
 	float* prices = NULL; // Pointer to the matrix of each of the product's prices
 	RNG* rng;				// Random number generator
+
+
+	float* ext_rn = NULL;
 };
 
 

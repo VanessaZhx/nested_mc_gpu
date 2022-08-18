@@ -13,8 +13,14 @@
 
 __global__ void moro_inv(float* data, int cnt, float mean, float std);
 __global__ void moro_inv_v2(float* data, int cnt, float mean, float std);
-__global__ void price_bond(float* rn, int cnt,
-	float bond_par, float bond_c, int bond_m, float* bond_y,
+__global__ void price_bond(
+	const float* rn,
+	const int cnt,
+	const float bond_par,
+	const float bond_c,
+	const int bond_m,
+	const float bond_sig,
+	const float* bond_y,
 	float* prices);
 __global__ void price_stock(
 	const float* rn,

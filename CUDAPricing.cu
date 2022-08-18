@@ -21,9 +21,15 @@ __global__ void moro_inv_v2(float* data, int cnt, float mean, float std) {
 
 }
 
-__global__ void price_bond(float* rn, int cnt,
-	float bond_par, float bond_c, int bond_m, float* bond_y,
-	float* prices) {
+__global__ void price_bond(
+	const float* rn,
+	const int cnt,
+	const float bond_par,
+	const float bond_c,
+	const int bond_m,
+	const float bond_sig,
+	const float* bond_y,
+	float* prices){
 
 	// Naive implementation
 	// Each thread handle one outter, calculate the price and store it
@@ -31,7 +37,7 @@ __global__ void price_bond(float* rn, int cnt,
 	size_t Idx = threadIdx.x + blockDim.x * blockIdx.x;
 	if (Idx >= cnt) return;
 
-	float d = rn[Idx];
+	float d = rn[Idx] * bond_sig;
 	float price = 0.0f;
 	// Loop to sum the coupon price until the maturity
 	for (int i = 0; i < bond_m; i++) {
