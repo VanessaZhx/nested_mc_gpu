@@ -3,11 +3,13 @@
 int RNG::init_cpu() {
     /* Create pseudo-random number generator */
     CURAND_CALL(curandCreateGeneratorHost(&gen, CURAND_RNG_QUASI_SOBOL32));
+    return 0;
 }
 
 int RNG::init_gpu() {
     /* Create pseudo-random number generator */
     CURAND_CALL(curandCreateGenerator(&gen, CURAND_RNG_QUASI_SOBOL32));
+    return 0;
 }
 
 RNG::~RNG() {
