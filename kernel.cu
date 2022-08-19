@@ -8,12 +8,9 @@ int main(int argc, char* argv[])
 	int path_int = 10;  // Number of the inner MC loops
 
 	// input: path_ext, path_int, exp_times
-	/*if (argc >= 2)  path_ext = atoi(argv[1]);
-	if (argc >= 3)  path_int = atoi(argv[2]);
-	if (argc >= 4)  exp_times = atoi(argv[3]);*/
-
 	bool combined_rng = false;
 	bool barrier_early = false;
+	bool same_rn = false;
 	int cnt = 0;
 
 	for (int i = 1; i < argc; i++) {
@@ -27,10 +24,14 @@ int main(int argc, char* argv[])
 			case 'e':		// barrier early stop
 				barrier_early = true;
 				break;
+			case 's':		// Same RN sequence
+				same_rn = true;
+				break;
 			default:		// unrecognisable - show usage
 				cout << endl << "===================== USAGE =====================" << endl;
 				cout << "\t-c\tUse combined sobol RNG and normal transfer" << endl;
 				cout << "\t-e\tUse early stop strategy for barrier option" << endl;
+				cout << "\t-s\tUse same RN for inner loop" << endl;
 				cout << "Enter up to 3 numbers for [path_ext, path_int, exp_times]" << endl;
 				cout << "Default setup: [" << path_ext << ", " << path_int << ", "
 					<< exp_times << "]" << endl;
@@ -64,6 +65,7 @@ int main(int argc, char* argv[])
 	cout << "Path Internal: " << path_int << endl;
 	cout << "Optimisation: Combined RNG - " << combined_rng << endl;
 	cout << "              Barrier Early Stop - " << barrier_early << endl;
+	cout << "              Same Inner RN - " << same_rn << endl;
 
 	cout << endl << "== DEVICE ==" << endl;
 
@@ -155,7 +157,7 @@ int main(int argc, char* argv[])
 		port_n, port_w,
 		risk_free
 	);
-	mc->optimise_init(combined_rng, barrier_early);
+	mc->optimise_init(combined_rng, barrier_early, same_rn);
 	mc->bond_init(bond_par, bond_c, bond_m, bond_y, sigma, 0);
 	mc->stock_init(stock_s0, stock_mu, stock_var, stock_x, 1);
 	mc->bskop_init(bskop_n, bskop_stocks, bskop_cov, bskop_k, bskop_w, bskop_t, 2);

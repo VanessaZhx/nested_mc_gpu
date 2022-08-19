@@ -132,10 +132,7 @@ __global__ void price_bskop(
 	prices[Idx] = call / path_int;
 }
 
-
-// Can't use : Require too much space to start up
-// value weighted is too large to store(will be contented)
-__global__ void price_bskop_reverse(
+__global__ void price_bskop_sameRN(
 	const int cnt,
 	const int path_int,
 	const float* rn,
@@ -145,11 +142,10 @@ __global__ void price_bskop_reverse(
 	const float* s0,
 	const float* mean,
 	const float* std,
-	const float* x,
+	const float* stock_x,
 	const int bskop_t,
 	const float bskop_k,
 	const float* w,
-	float* value_weighted,
 	float* prices
 ) {
 
@@ -161,39 +157,34 @@ __global__ void price_bskop_reverse(
 	// Inner loop
 	// The random number has already been transformed with cov
 	// Calculate each value with the correlated-random numbers
-	// random numbers[n][path_int]
-
-	const float* rn_p = &rn[Idx * path_int * stock_n];
-	float* value_p = &value_weighted[Idx * path_int];
-	// reverse
+	// random numbers[path_int + 1][n]
+	// First part is for s0
+	const float tmp1 = sqrtf(float(var_t));
+	// Get start value for each asset, save in s0_rn array
 	for (int i = 0; i < stock_n; i++) {
-		float tmp1 = (mean[i] - 0.5f * std[i] * std[i]) * var_t;
-		float tmp2 = std[i] * sqrtf(float(var_t));
-	
-		// Get start value for each asset
-		// To reduce calculation, pre multiply weight and shares
-		// tmp3 = weight[i] * x[i] * start_price[i]
-		float tmp3 = w[i] * x[i] * (s0[i] * exp(tmp1 +  tmp2 * s0_rn[Idx * stock_n + i]));
-	
-		
-		// random numbers[n][path_int]
-		
-		for (int j = 0; j < path_int; j++) {
-			//printf("s0-%f \n", tmp3);
-			value_p[j] += tmp3 * exp(tmp1 + tmp2 * rn_p[j * stock_n + i]);
-			std::printf("i-%d j-%d rn-%f\n", i, j, value_p[j]);
-		}
+		s0_rn[Idx * stock_n + i] = s0[i] * exp((mean[i] - 0.5f * std[i] * std[i]) * var_t
+			+ std[i] * tmp1 * s0_rn[Idx * stock_n + i]);
 	}
-	
-	// Store in prices matrix
+
+	const float* rn_p = rn;
+	float price = 0.0f;
 	float call = 0.0f;
+	const float tmp2 = sqrtf(float(bskop_t));
+
 	for (int i = 0; i < path_int; i++) {
-		std::printf("- %d %f\n", Idx, value_weighted[i]);
-		call += (value_p[i] > bskop_k) ? (value_weighted[i] - bskop_k) : 0;
+		for (int j = 0; j < stock_n; j++) {
+			price += stock_x[j] * w[j] * s0_rn[Idx * stock_n + j]
+				* exp((mean[j] - 0.5f * std[j] * std[j]) * bskop_t
+					+ std[j] * tmp2 * rn_p[i * stock_n + j]);
+			//std::printf("idx-%d\n", Idx);
+			//std::printf("i-%d j-%d s0-%f rn-%f\n", i, j, s0_rn[Idx * stock_n + j], rn_p[i * stock_n + j]);
+		}
+		call += (price > bskop_k) ? (price - bskop_k) : 0.0f;
+		price = 0.0f;
 	}
-	
 	prices[Idx] = call / path_int;
 }
+
 
 
 // No early stop
@@ -302,6 +293,119 @@ __global__ void price_barrier_early(
 			barop_price = stock_price * exp(tmp1 * (barop_t-1) + std * 
 				sqrtf(float((barop_t - 1))) * int_rn[Idx * path_int * barop_t +
 												j * barop_t + barop_t - 1]);
+			call += (barop_price > barop_k) ? barop_price - barop_k : 0;
+		}
+	}
+	//cout << call << endl;
+
+	// Get expected price at var_t
+	prices[Idx] = x * (call / path_int);
+}
+
+
+__global__ void price_barrier_sameRN(
+	const float* ext_rn,
+	const float* int_rn,
+	const int cnt,
+	const int path_int,
+	const float s0,
+	const float mean,
+	const float std,
+	const int x,
+	const int var_t,
+	const int barop_t,
+	const int barop_h,
+	const int barop_k,
+	float* prices
+) {
+	// Each thread handle one outter, calculate the price and store it
+	size_t Idx = threadIdx.x + blockDim.x * blockIdx.x;
+	if (Idx >= cnt) return;
+
+	// reprice underlying stocks
+	// will be used in inner as s0
+	float stock_price = s0 * exp((mean - 0.5f * std * std) * var_t
+		+ std * sqrtf(float(var_t)) * ext_rn[Idx]);
+	float max_price = stock_price;
+
+	// Inner loop
+	float call = 0.0f;
+	float barop_price = 0.0f;
+	float tmp1 = mean - 0.5f * std * std;
+	for (int j = 0; j < path_int; j++) {
+		// Loop over steps in one path, get max price
+		for (int k = 0; k < barop_t; k++) {
+			// Calculate price at this step
+			barop_price = stock_price * exp(tmp1 * k
+				+ std * sqrtf(float(k)) * int_rn[j * barop_t + k]);
+			// Check maximum
+			if (barop_price > max_price) {
+				max_price = barop_price;
+			}
+		}
+		//cout << endl<< barop_price << endl;
+
+		// Compare with barrier, the option exists if max price is larger than barrier
+		if (max_price > barop_h) {
+			// barop_price will be the last price
+			// max{St-K, 0}
+			call += (barop_price > barop_k) ? barop_price - barop_k : 0;
+		}
+	}
+	//cout << call << endl;
+
+	// Get expected price at var_t
+	prices[Idx] = x * (call / path_int);
+}
+
+__global__ void price_barrier_early_sameRN(
+	const float* ext_rn,
+	const float* int_rn,
+	const int cnt,
+	const int path_int,
+	const float s0,
+	const float mean,
+	const float std,
+	const int x,
+	const int var_t,
+	const int barop_t,
+	const int barop_h,
+	const int barop_k,
+	float* prices
+) {
+	// Each thread handle one outter, calculate the price and store it
+	size_t Idx = threadIdx.x + blockDim.x * blockIdx.x;
+	if (Idx >= cnt) return;
+
+	// reprice underlying stocks
+	// will be used in inner as s0
+	float stock_price = s0 * exp((mean - 0.5f * std * std) * var_t
+		+ std * sqrtf(float(var_t)) * ext_rn[Idx]);
+
+	// Inner loop
+	bool acted = false;
+	float call = 0.0f;
+	float barop_price = 0.0f;
+	float tmp1 = mean - 0.5f * std * std;
+	for (int j = 0; j < path_int; j++) {
+		acted = false;
+		// Loop over steps in one path 
+		for (int k = 0; k < barop_t; k++) {
+			// Calculate price at this step
+			barop_price = stock_price * exp(tmp1 * k
+				+ std * sqrtf(float(k)) * int_rn[j * barop_t + k]);
+
+			// Check if exceed H, early stop
+			if (barop_price > barop_h) {
+				acted = true;
+				break;
+			}
+		}
+		//cout << endl<< barop_price << endl;
+		if (acted) {
+			// barop_price will be the last price
+			barop_price = stock_price * exp(tmp1 * (barop_t - 1) + std *
+				sqrtf(float((barop_t - 1))) * int_rn[j * barop_t + barop_t - 1]);
 			call += (barop_price > barop_k) ? barop_price - barop_k : 0;
 		}
 	}

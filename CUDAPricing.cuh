@@ -22,6 +22,7 @@ __global__ void price_bond(
 	const float bond_sig,
 	const float* bond_y,
 	float* prices);
+
 __global__ void price_stock(
 	const float* rn,
 	const int cnt,
@@ -50,7 +51,7 @@ __global__ void price_bskop(
 	float* prices
 );
 
-__global__ void price_bskop_reverse(
+__global__ void price_bskop_sameRN(
 	const int cnt,
 	const int path_int,
 	const float* rn,
@@ -64,7 +65,6 @@ __global__ void price_bskop_reverse(
 	const int bskop_t,
 	const float bskop_k,
 	const float* w,
-	float* value_weighted,
 	float* prices
 );
 
@@ -86,6 +86,38 @@ __global__ void price_barrier(
 
 // with early stop
 __global__ void price_barrier_early(
+	const float* ext_rn,
+	const float* int_rn,
+	const int cnt,
+	const int path_int,
+	const float s0,
+	const float mean,
+	const float std,
+	const int x,
+	const int var_t,
+	const int barop_t,
+	const int barop_h,
+	const int barop_k,
+	float* prices
+);
+
+__global__ void price_barrier_sameRN(
+	const float* ext_rn,
+	const float* int_rn,
+	const int cnt,
+	const int path_int,
+	const float s0,
+	const float mean,
+	const float std,
+	const int x,
+	const int var_t,
+	const int barop_t,
+	const int barop_h,
+	const int barop_k,
+	float* prices
+);
+
+__global__ void price_barrier_early_sameRN(
 	const float* ext_rn,
 	const float* int_rn,
 	const int cnt,
