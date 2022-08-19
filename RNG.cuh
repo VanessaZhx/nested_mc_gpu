@@ -15,8 +15,8 @@ public:
     // m - simulation times
     // n - dimention
     ~RNG();
-    int RNG::init_cpu();
-    int RNG::init_gpu();
+    int init_cpu();
+    int init_gpu();
     void set_offset(int ofs) { offset = ofs; }
     int generate_sobol(float*& data, int m, int n);
     int convert_normal(float*& data, int length, float sigma = 1.0f);
