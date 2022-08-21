@@ -468,7 +468,6 @@ double NestedMonteCarloVaR::execute() {
 	}
 
 	cudaDeviceSynchronize();
-	CUDA_CALL(cudaFree(ext_rn));
 	CUDA_CALL(cudaFree(barop_rn));
 
 	/*cout << endl << "Barop:" << endl;
@@ -546,6 +545,8 @@ double NestedMonteCarloVaR::execute() {
 	CUDA_CALL(cudaFree(list));
 	CUDA_CALL(cudaFree(value_weighted));
 	CUDA_CALL(cudaFree(bskop_rn));
+    CUDA_CALL(cudaFree(ext_rn));
+
 
 	//cout << endl << "Bskop:" << endl;
 	//for (int i = 0; i < path_ext; i++) {
@@ -569,7 +570,7 @@ double NestedMonteCarloVaR::execute() {
 	}
 	cout << endl;*/
 
-	cout << endl << "Start Price: "<< port_p0 << endl;
+	//cout << endl << "Start Price: "<< port_p0 << endl;
 
 
 	// ====================================================
@@ -615,13 +616,13 @@ double NestedMonteCarloVaR::execute() {
 	CUDA_CALL(cudaFree(w));
 	CUBLAS_CALL(cublasDestroy(handle));
 
-
+    /*
 	cout << endl << "Loss:" << endl;
 	for (int i = 0; i < path_ext; i++) {
 		cout << loss[i] << " ";
 	}
 	cout << endl;
-
+    */
 
 	// ====================================================
 	//						Sort
@@ -667,7 +668,7 @@ double NestedMonteCarloVaR::execute() {
 void NestedMonteCarloVaR::output_res(float* data, int len) {
 	// open a file for outputting the matrix
 	ofstream outputfile;
-	outputfile.open("C:/Users/windows/Desktop/res_gpu.txt");
+	outputfile.open("res_gpu.txt");
 
 	// output the matrix to the file
 	if (outputfile.is_open()) {

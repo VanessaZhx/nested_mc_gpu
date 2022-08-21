@@ -140,7 +140,7 @@ int main(int argc, char* argv[])
 	Stock* s1 = new Stock(stock_s0, stock_mu, stock_var, 100);
 	Stock* s2 = new Stock(stock_s0, stock_mu, stock_var, 100);
 	const int bskop_n = 2;								// Number of stocks in basket
-	const float bskop_k = 3100.0f;						// Execution price
+	const float bskop_k = 31000.0f;						// Execution price
 	const int bskop_t = 1;								// Maturity of basket option
 	Stock bskop_stocks[bskop_n] = { *s1, *s2 };			// List of stocks
 	float bskop_cov[bskop_n * bskop_n] = { 1.0f, 0.5f,
