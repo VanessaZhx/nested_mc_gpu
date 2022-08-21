@@ -2,7 +2,7 @@
 
 int main(int argc, char* argv[])
 {
-	int exp_times = 20;   // Total times of MC
+	int exp_times = 0;   // Total times of MC
 
 	int path_ext = 10;  // Number of the outer MC loops
 	int path_int = 10;  // Number of the inner MC loops
@@ -118,10 +118,10 @@ int main(int argc, char* argv[])
 	const float var_per = 0.95f;				// 1-percentile
 
 	const int port_n = 4;					// Number of products in the portfolio
-	//float port_w[port_n] = { 0.0f, 0.0f, 0.0f, 1.0f };		// Weights of the products in the portfolio
-	float port_w[port_n] = { 0.3f, 0.3f, 0.1f, 0.3f };		// Weights of the products in the portfolio
+	float port_w[port_n] = { 0.2f, 0.1f, 0.35f, 0.35f };		// Weights of the products in the portfolio
 														// { bond, stock, basket option, barrier option}
-	const float risk_free = 0.02f;
+	//float port_w[port_n] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	const float risk_free = 0.01f;
 
 	const float bond_par = 1000.0f;			// Par value of bond
 	const float bond_c = 100.0f;			// Coupon
@@ -134,18 +134,19 @@ int main(int argc, char* argv[])
 
 	const float stock_s0 = 300.0f;			// Start value of stock
 	const float stock_mu = risk_free;			// risk free(or mean)
-	const float stock_var = 0.13f;			// Volatility
-	const int stock_x = 100;					// Number of shares
+	const float stock_var = 0.03f;			// Volatility
+	const int stock_x = 1;					// Number of shares
 
-	Stock* s1 = new Stock(stock_s0, stock_mu, stock_var, 100);
-	Stock* s2 = new Stock(stock_s0, stock_mu, stock_var, 100);
+	Stock* s0 = new Stock(stock_s0, stock_mu, stock_var, 10);
+	Stock* s1 = new Stock(500.0f, risk_free, 0.02f, 10);
+	Stock* s2 = new Stock(700.0f, risk_free, 0.01f, 10);
 	const int bskop_n = 2;								// Number of stocks in basket
-	const float bskop_k = 31000.0f;						// Execution price
+	const float bskop_k = 390.0f;						// Execution price
 	const int bskop_t = 1;								// Maturity of basket option
 	Stock bskop_stocks[bskop_n] = { *s1, *s2 };			// List of stocks
 	float bskop_cov[bskop_n * bskop_n] = { 1.0f, 0.5f,
 										   0.5f, 1.0f };	// Covariance matrix
-	float bskop_w[bskop_n] = { 0.5f, 0.5f };				// weight
+	float bskop_w[bskop_n] = { 0.8f, 0.2f };				// weight
 
 	const float barop_k = 310.0f;				// Execution price
 	const float barop_h = 320.0f;				// Barrier
@@ -157,12 +158,10 @@ int main(int argc, char* argv[])
 		port_n, port_w,
 		risk_free
 	);
-	mc->optimise_init(combined_rng, barrier_early, same_rn);
 	mc->bond_init(bond_par, bond_c, bond_m, bond_y, sigma, 0);
 	mc->stock_init(stock_s0, stock_mu, stock_var, stock_x, 1);
 	mc->bskop_init(bskop_n, bskop_stocks, bskop_cov, bskop_k, bskop_w, bskop_t, 2);
-	mc->barop_int(s1, barop_k, barop_h, barop_t, 3);
-
+	mc->barop_int(s0, barop_k, barop_h, barop_t, 3);
 	cout << endl << "== EXECUTION ==" << endl;
 
 	// Warm up

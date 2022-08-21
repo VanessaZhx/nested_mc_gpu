@@ -627,7 +627,7 @@ double NestedMonteCarloVaR::execute() {
 	}
 	cout << endl;*/
 
-	//output_res(loss, path_ext);
+	output_res(loss, path_ext);
 
 
 	// ====================================================
