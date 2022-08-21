@@ -485,9 +485,7 @@ double NestedMonteCarloVaR::execute() {
 	dim3 grid_bskop((path_ext - 1) / block.x + 1, 1);
 	
 	float* list = NULL;
-	float* value_weighted = NULL;
 	CUDA_CALL(cudaMallocManaged((void**)&list, bsk_n * 5 * sizeof(float)));
-	CUDA_CALL(cudaMallocManaged((void**)&value_weighted, path_int * path_ext * sizeof(float)));
 	//[s0, mean, std, x, w]
 	for (int i = 0; i < bsk_n; i++) {
 		list[i + bsk_n * 0] = bskop->stocks[i].s0;
@@ -495,9 +493,6 @@ double NestedMonteCarloVaR::execute() {
 		list[i + bsk_n * 2] = bskop->stocks[i].std;
 		list[i + bsk_n * 3] = (float)bskop->stocks[i].x;
 		list[i + bsk_n * 4] = bskop->w[i];
-	}
-	for (int i = 0; i < path_int * path_ext; i++) {
-		value_weighted[i] = 0.0f;
 	}
 
 	if (!same_rn) {
@@ -515,7 +510,6 @@ double NestedMonteCarloVaR::execute() {
 			bskop_t,
 			bskop->k,
 			&list[bsk_n * 4],	//w
-			//value_weighted,
 			&prices[row_idx * path_ext]
 			);
 	}
@@ -534,7 +528,6 @@ double NestedMonteCarloVaR::execute() {
 			bskop_t,
 			bskop->k,
 			&list[bsk_n * 4],	//w
-			//value_weighted,
 			&prices[row_idx * path_ext]
 			);
 	}
@@ -543,7 +536,6 @@ double NestedMonteCarloVaR::execute() {
 	cudaDeviceSynchronize();
 	
 	CUDA_CALL(cudaFree(list));
-	CUDA_CALL(cudaFree(value_weighted));
 	CUDA_CALL(cudaFree(bskop_rn));
     CUDA_CALL(cudaFree(ext_rn));
 
@@ -635,7 +627,7 @@ double NestedMonteCarloVaR::execute() {
 	}
 	cout << endl;*/
 
-	output_res(loss, path_ext);
+	//output_res(loss, path_ext);
 
 
 	// ====================================================

@@ -112,10 +112,6 @@ __global__ void price_bskop(
 			+ std[0] * tmp1 * s0_rn[Idx]);
     float s01 = s0[1] * exp((mean[1] - 0.5f * std[1] * std[1]) * var_t
 			+ std[1] * tmp1 * s0_rn[Idx]);
-//for (int i = 0; i < stock_n; i++) {
-//		s0_rn[Idx * stock_n ] = s0[i] * exp((mean[i] - 0.5f * std[i] * std[i]) * var_t
-//			+ std[i] * tmp1 * s0_rn[Idx * stock_n + i]);y
-//	}
 
 	const float* rn_p = &rn[Idx * path_int * stock_n];
 	float price = 0.0f;
@@ -123,16 +119,12 @@ __global__ void price_bskop(
 	const float tmp2 = sqrtf(float(bskop_t));
 
 	for (int i = 0; i < path_int; i++) {
-		//for (int j = 0; j < stock_n; j++) {
-			price += stock_x[0] *w[0] * s00
-				* exp((mean[0] - 0.5f * std[0] * std[0]) * bskop_t
-					+ std[0] * tmp2 * rn_p[i * stock_n + 0]);
-			price += stock_x[1] *w[1] * s01
-				* exp((mean[1] - 0.5f * std[1] * std[1]) * bskop_t
-					+ std[1] * tmp2 * rn_p[i * stock_n + 1]);
-//std::printf("idx-%d\n", Idx);
-			//std::printf("i-%d j-%d s0-%f rn-%f\n", i, j, s0_rn[Idx * stock_n + j], rn_p[i * stock_n + j]);
-		//}
+		price += stock_x[0] *w[0] * s00
+			* exp((mean[0] - 0.5f * std[0] * std[0]) * bskop_t
+				+ std[0] * tmp2 * rn_p[i * stock_n + 0]);
+		price += stock_x[1] *w[1] * s01
+			* exp((mean[1] - 0.5f * std[1] * std[1]) * bskop_t
+				+ std[1] * tmp2 * rn_p[i * stock_n + 1]);
 		call += (price > bskop_k) ? (price - bskop_k) : 0.0f;
 		price = 0.0f;
 	}
@@ -168,10 +160,10 @@ __global__ void price_bskop_sameRN(
 	// First part is for s0
 	const float tmp1 = sqrtf(float(var_t));
 	// Get start value for each asset, save in s0_rn array
-	for (int i = 0; i < stock_n; i++) {
-		s0_rn[Idx * stock_n + i] = s0[i] * exp((mean[i] - 0.5f * std[i] * std[i]) * var_t
-			+ std[i] * tmp1 * s0_rn[Idx * stock_n + i]);
-	}
+	float s00 = s0[0] * exp((mean[0] - 0.5f * std[0] * std[0]) * var_t
+		+ std[0] * tmp1 * s0_rn[Idx]);
+	float s01 = s0[1] * exp((mean[1] - 0.5f * std[1] * std[1]) * var_t
+		+ std[1] * tmp1 * s0_rn[Idx]);
 
 	const float* rn_p = rn;
 	float price = 0.0f;
@@ -180,11 +172,12 @@ __global__ void price_bskop_sameRN(
 
 	for (int i = 0; i < path_int; i++) {
 		for (int j = 0; j < stock_n; j++) {
-			price += stock_x[j] * w[j] * s0_rn[Idx * stock_n + j]
-				* exp((mean[j] - 0.5f * std[j] * std[j]) * bskop_t
-					+ std[j] * tmp2 * rn_p[i * stock_n + j]);
-			//std::printf("idx-%d\n", Idx);
-			//std::printf("i-%d j-%d s0-%f rn-%f\n", i, j, s0_rn[Idx * stock_n + j], rn_p[i * stock_n + j]);
+			price += stock_x[0] * w[0] * s00
+				* exp((mean[0] - 0.5f * std[0] * std[0]) * bskop_t
+					+ std[0] * tmp2 * rn_p[i * stock_n + 0]);
+			price += stock_x[1] * w[1] * s01
+				* exp((mean[1] - 0.5f * std[1] * std[1]) * bskop_t
+					+ std[1] * tmp2 * rn_p[i * stock_n + 1]);
 		}
 		call += (price > bskop_k) ? (price - bskop_k) : 0.0f;
 		price = 0.0f;
