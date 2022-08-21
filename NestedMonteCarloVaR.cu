@@ -356,8 +356,15 @@ double NestedMonteCarloVaR::execute() {
 	CUDA_CALL(cudaFree(bond_y));
 	//CUDA_CALL(cudaFree(bond_rn));
 
-	row_idx++;
+	
 
+	//cout << endl << "Bond:" << endl;
+	//for (int i = 0; i < path_ext; i++) {
+	//	cout << prices[row_idx * path_ext + i] << " ";
+	//}
+	//cout << endl;
+
+	row_idx++;
 
 	/* ====================
 	** ==     Stock      ==
@@ -379,7 +386,98 @@ double NestedMonteCarloVaR::execute() {
 
 	row_idx++;
 
+	/* ====================
+	** == Barrier Option ==
+	** ==================== */
+	// Up-in-call
+	dim3 grid_barop((path_ext - 1) / block.x + 1, 1);
+	/*cout << endl << "RN:" << endl;
+	for (int i = 0; i < path_ext; i++) {
+		cout << ext_rn[i] << " ";
+	}
+	cout << endl;*/
 
+
+	if (!barrier_early && !same_rn) {
+		price_barrier << <grid_barop, block >> > (
+			ext_rn,
+			barop_rn,
+			path_ext,
+			path_int,
+			barop->s->s0,
+			barop->s->mean,
+			barop->s->std,
+			barop->s->x,
+			var_t,
+			barop_t,
+			barop->h,
+			barop->k,
+			&prices[row_idx * path_ext]
+			);
+	}
+	else if (barrier_early && !same_rn) {
+		price_barrier_early << <grid_barop, block >> > (
+			ext_rn,
+			barop_rn,
+			path_ext,
+			path_int,
+			barop->s->s0,
+			barop->s->mean,
+			barop->s->std,
+			barop->s->x,
+			var_t,
+			barop_t,
+			barop->h,
+			barop->k,
+			&prices[row_idx * path_ext]
+			);
+	}
+	else if (!barrier_early && same_rn) {
+		price_barrier_sameRN << <grid_barop, block >> > (
+			ext_rn,
+			barop_rn,
+			path_ext,
+			path_int,
+			barop->s->s0,
+			barop->s->mean,
+			barop->s->std,
+			barop->s->x,
+			var_t,
+			barop_t,
+			barop->h,
+			barop->k,
+			&prices[row_idx * path_ext]
+			);
+	}
+	else {
+		price_barrier_early_sameRN << <grid_barop, block >> > (
+			ext_rn,
+			barop_rn,
+			path_ext,
+			path_int,
+			barop->s->s0,
+			barop->s->mean,
+			barop->s->std,
+			barop->s->x,
+			var_t,
+			barop_t,
+			barop->h,
+			barop->k,
+			&prices[row_idx * path_ext]
+			);
+	}
+
+	cudaDeviceSynchronize();
+	CUDA_CALL(cudaFree(ext_rn));
+	CUDA_CALL(cudaFree(barop_rn));
+
+	/*cout << endl << "Barop:" << endl;
+	for (int i = 0; i < path_ext; i++) {
+		cout << prices[row_idx * path_ext + i] << " ";
+	}
+	cout << endl;*/
+
+	row_idx++;
 
 
 	/* ====================
@@ -448,93 +546,30 @@ double NestedMonteCarloVaR::execute() {
 	CUDA_CALL(cudaFree(list));
 	CUDA_CALL(cudaFree(value_weighted));
 	CUDA_CALL(cudaFree(bskop_rn));
+
+	//cout << endl << "Bskop:" << endl;
+	//for (int i = 0; i < path_ext; i++) {
+	//	cout << prices[row_idx * path_ext + i] << " ";
+	//}
+	//cout << endl;
 	
 	row_idx++;
 
 
 
-	/* ====================
-	** == Barrier Option ==
-	** ==================== */
-	// Up-in-call
-	dim3 grid_barop((path_ext - 1) / block.x + 1, 1);
-
-	if (!barrier_early && !same_rn) {
-		price_barrier << <grid_barop, block >> > (
-			ext_rn,
-			barop_rn,
-			path_ext,
-			path_int,
-			barop->s->s0,
-			barop->s->mean,
-			barop->s->std,
-			barop->s->x,
-			var_t,
-			barop_t,
-			barop->h,
-			barop->k,
-			&prices[row_idx * path_ext]
-			);
-	}
-	else if(barrier_early && !same_rn) {
-		price_barrier_early << <grid_barop, block >> > (
-			ext_rn,
-			barop_rn,
-			path_ext,
-			path_int,
-			barop->s->s0,
-			barop->s->mean,
-			barop->s->std,
-			barop->s->x,
-			var_t,
-			barop_t,
-			barop->h,
-			barop->k,
-			&prices[row_idx * path_ext]
-			);
-	}
-	else if (!barrier_early && same_rn) {
-		price_barrier_sameRN << <grid_barop, block >> > (
-			ext_rn,
-			barop_rn,
-			path_ext,
-			path_int,
-			barop->s->s0,
-			barop->s->mean,
-			barop->s->std,
-			barop->s->x,
-			var_t,
-			barop_t,
-			barop->h,
-			barop->k,
-			&prices[row_idx * path_ext]
-			);
-	}
-	else {
-		price_barrier_early_sameRN << <grid_barop, block >> > (
-			ext_rn,
-			barop_rn,
-			path_ext,
-			path_int,
-			barop->s->s0,
-			barop->s->mean,
-			barop->s->std,
-			barop->s->x,
-			var_t,
-			barop_t,
-			barop->h,
-			barop->k,
-			&prices[row_idx * path_ext]
-			);
-	}
 	
-	cudaDeviceSynchronize();
-	CUDA_CALL(cudaFree(ext_rn));
-	CUDA_CALL(cudaFree(barop_rn));
 
 	// Reset
 	row_idx = 0;
 	rng->set_offset(1024);
+
+	/*cout << endl << "Prices:" << endl;
+	for (int i = 0; i < path_ext * 4; i++) {
+		cout << prices[i] << " ";
+	}
+	cout << endl;*/
+
+	cout << endl << "Start Price: "<< port_p0 << endl;
 
 
 	// ====================================================
@@ -581,11 +616,11 @@ double NestedMonteCarloVaR::execute() {
 	CUBLAS_CALL(cublasDestroy(handle));
 
 
-	/*cout << endl << "Loss:" << endl;
+	cout << endl << "Loss:" << endl;
 	for (int i = 0; i < path_ext; i++) {
 		cout << loss[i] << " ";
 	}
-	cout << endl;*/
+	cout << endl;
 
 
 	// ====================================================
@@ -599,7 +634,7 @@ double NestedMonteCarloVaR::execute() {
 	}
 	cout << endl;*/
 
-	//output_res(loss, path_ext);
+	output_res(loss, path_ext);
 
 
 	// ====================================================
