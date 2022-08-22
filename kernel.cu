@@ -158,6 +158,8 @@ int main(int argc, char* argv[])
 		port_n, port_w,
 		risk_free
 	);
+
+	mc->optimise_init(combined_rng, barrier_early, same_rn);
 	mc->bond_init(bond_par, bond_c, bond_m, bond_y, sigma, 0);
 	mc->stock_init(stock_s0, stock_mu, stock_var, stock_x, 1);
 	mc->bskop_init(bskop_n, bskop_stocks, bskop_cov, bskop_k, bskop_w, bskop_t, 2);
