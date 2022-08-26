@@ -77,7 +77,6 @@ __global__ void price_stock(
 	prices[Idx] =  tmp1 * exp(tmp2 + tmp3 * rn[Idx]);
 }
 
-// TODO: stock info is commonly used, can use shared memory to reduce time
 // No reverse
 __global__ void price_bskop(
 	const int cnt,
@@ -171,14 +170,12 @@ __global__ void price_bskop_sameRN(
 	const float tmp2 = sqrtf(float(bskop_t));
 
 	for (int i = 0; i < path_int; i++) {
-		for (int j = 0; j < stock_n; j++) {
-			price += stock_x[0] * w[0] * s00
-				* exp((mean[0] - 0.5f * std[0] * std[0]) * bskop_t
-					+ std[0] * tmp2 * rn_p[i * stock_n + 0]);
-			price += stock_x[1] * w[1] * s01
-				* exp((mean[1] - 0.5f * std[1] * std[1]) * bskop_t
-					+ std[1] * tmp2 * rn_p[i * stock_n + 1]);
-		}
+		price += stock_x[0] * w[0] * s00
+			* exp((mean[0] - 0.5f * std[0] * std[0]) * bskop_t
+				+ std[0] * tmp2 * rn_p[i * stock_n + 0]);
+		price += stock_x[1] * w[1] * s01
+			* exp((mean[1] - 0.5f * std[1] * std[1]) * bskop_t
+				+ std[1] * tmp2 * rn_p[i * stock_n + 1]);
 		call += (price > bskop_k) ? (price - bskop_k) : 0.0f;
 		price = 0.0f;
 	}
@@ -284,6 +281,7 @@ __global__ void price_barrier_early(
 			// Check if exceed H, early stop
 			if (barop_price > barop_h) {
 				acted = true;
+                //printf("1");
 				break;
 			}
 		}
