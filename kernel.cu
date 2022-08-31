@@ -67,7 +67,7 @@ int main(int argc, char* argv[])
 	cout << "              Barrier Early Stop - " << barrier_early << endl;
 	cout << "              Same Inner RN - " << same_rn << endl;
 
-	/*
+	
     cout << endl << "== DEVICE ==" << endl;
 
 	int deviceCount;
@@ -114,7 +114,7 @@ int main(int argc, char* argv[])
 
 	}
 
-    */
+    
 
 	const int var_t = 1;					// VaR duration
 	const float var_per = 0.95f;				// 1-percentile

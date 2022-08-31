@@ -58,3 +58,27 @@ Result outputed!
 
 == RESULT ==
 AVG EXECUTION TIME: -nan ms.
+
+== SET UP ==
+Experiment Times: 100
+Path External: 8192
+Path Internal: 8192
+Optimisation: Combined RNG - 1
+              Barrier Early Stop - 0
+              Same Inner RN - 0
+
+== EXECUTION ==
+Experiment # 0 finished.
+Experiment # 10 finished.
+Experiment # 20 finished.
+Experiment # 30 finished.
+Experiment # 40 finished.
+Experiment # 50 finished.
+Experiment # 60 finished.
+Experiment # 70 finished.
+Experiment # 80 finished.
+Experiment # 90 finished.
+Experiment # 99 finished.
+
+== RESULT ==
+AVG EXECUTION TIME: 3670.19 ms.

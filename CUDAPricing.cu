@@ -281,7 +281,6 @@ __global__ void price_barrier_early(
 			// Check if exceed H, early stop
 			if (barop_price > barop_h) {
 				acted = true;
-                //printf("1");
 				break;
 			}
 		}
