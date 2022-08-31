@@ -90,6 +90,49 @@ Experiment # 99 finished.
 AVG EXECUTION TIME: 1.63678 ms.
 ```
 
+```console
+$ ./output 10 10 100 -c -e -s
+
+== SET UP ==
+Experiment Times: 100
+Path External: 10
+Path Internal: 10
+Optimisation: Combined RNG - 1
+              Barrier Early Stop - 1
+              Same Inner RN - 1
+
+== DEVICE ==
+Number of CUDA devices 1.
+There is 1 device supporting CUDA
+For device #0
+Device name:                NVIDIA GeForce GTX TITAN X
+Major revision number:      5
+Minor revision Number:      2
+Total Global Memory:        12805734400
+Total shared mem per block: 49152
+Total const mem size:       65536
+Warp size:                  32
+Maximum block dimensions:   1024 x 1024 x 64
+Maximum grid dimensions:    2147483647 x 65535 x 65535
+Clock Rate:                 1215500
+Number of muliprocessors:   24
+
+== EXECUTION ==
+Experiment # 0 finished.
+Experiment # 10 finished.
+Experiment # 20 finished.
+Experiment # 30 finished.
+Experiment # 40 finished.
+Experiment # 50 finished.
+Experiment # 60 finished.
+Experiment # 70 finished.
+Experiment # 80 finished.
+Experiment # 90 finished.
+Experiment # 99 finished.
+
+== RESULT ==
+AVG EXECUTION TIME: 1.71079 ms.
+```
 
 ## Structure
 `kernel.cu` - The main entrance to the model. Contains all the initialising parameters.
