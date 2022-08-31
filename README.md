@@ -16,6 +16,7 @@ This project uses [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit) and 
 Clone the repository.
 ```console
 $ git clone https://github.com/VanessaZhx/nested_mc_gpu.git
+$ cd nested_mc_gpu
 ```
 Build a folder for compiling.
 ```console
